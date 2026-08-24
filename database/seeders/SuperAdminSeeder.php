@@ -33,7 +33,15 @@ class SuperAdminSeeder extends Seeder
     private function seedSuperAdmin(Role $role): void
     {
         $email = mb_strtolower((string) env('SUPERADMIN_EMAIL', 'superadmin@local.test'));
-        $password = (string) env('SUPERADMIN_PASSWORD', 'Sup3rAdmin!2026');
+        $password = (string) env('SUPERADMIN_PASSWORD', '');
+
+        // Sin contraseña por omisión: un despliegue que olvide la variable no
+        // debe quedar con una credencial conocida.
+        if ($password === '') {
+            $this->command?->error('Defina SUPERADMIN_PASSWORD en el .env antes de sembrar la cuenta inicial.');
+
+            return;
+        }
         $now = Carbon::now();
 
         $user = User::query()->updateOrCreate(
