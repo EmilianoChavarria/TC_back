@@ -1,0 +1,1337 @@
+{
+  "info": {
+    "_postman_id": "b7f4c0de-6a19-4a4e-9d2a-1f0b2c3d4e5f",
+    "name": "TCProject — Backend Auth & Seguridad",
+    "description": "API de autenticación y seguridad de TCProject.\n\n**Autenticación por cookie httpOnly**: `POST /auth/login` devuelve `Set-Cookie: access_token=<JWT>; HttpOnly`. Postman guarda la cookie en su cookie jar y la reenvía sola en las siguientes peticiones del mismo dominio; no hay que copiar nada a mano.\n\nEl script de la carpeta *Auth* copia además el valor de la cookie a la variable `accessToken` por si se quiere usar `Authorization: Bearer` (útil para clientes que no manejan cookies).\n\n**Auditoría**: cada solicitud que modifica estado se registra sola (middleware + eventos de Eloquent). La carpeta *Auditoría* consulta ese historial.\n\n**Orden sugerido**\n1. `Auth / Login`\n2. `Auth / Cambiar contraseña` (el superadmin sembrado entra con `mustChangePassword`)\n3. Resto de carpetas\n\n**Identificadores**: la API nunca devuelve llaves primarias. Los usuarios y las filas de historial se referencian por `uuid`, los roles por `roleName` y las IPs por su dirección. Un test de colección falla si alguna respuesta trae un id interno.\n\nVariables en el environment `TCProject — Local`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8000/api",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Formato uniforme de App\\Support\\ApiResponse",
+          "pm.test('respuesta con envoltura ApiResponse', function () {",
+          "    const body = pm.response.json();",
+          "    pm.expect(body).to.have.property('codeStatus');",
+          "    pm.expect(body).to.have.property('success');",
+          "    pm.expect(body).to.have.property('message');",
+          "    pm.expect(body).to.have.property('timestamp');",
+          "});",
+          "",
+          "// Regla del proyecto: la API no expone llaves primarias de base de datos.",
+          "pm.test('la respuesta no expone ids internos', function () {",
+          "    const prohibidos = ['id', 'roleId', 'userId', 'adminUserId', 'updatedByUserId', 'historyId'];",
+          "    const revisar = (nodo) => {",
+          "        if (Array.isArray(nodo)) { nodo.forEach(revisar); return; }",
+          "        if (nodo && typeof nodo === 'object') {",
+          "            Object.keys(nodo).forEach((clave) => {",
+          "                pm.expect(prohibidos, `campo prohibido: ${clave}`).to.not.include(clave);",
+          "                revisar(nodo[clave]);",
+          "            });",
+          "        }",
+          "    };",
+          "    revisar(pm.response.json().data);",
+          "});",
+          "",
+          "// El JWT viaja en cookie httpOnly: se copia a {{accessToken}} para poder",
+          "// usar Bearer en clientes que no manejan cookies.",
+          "const cookie = pm.cookies.has('access_token') ? pm.cookies.get('access_token') : null;",
+          "if (cookie) {",
+          "    pm.collectionVariables.set('accessToken', cookie);",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('login exitoso', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const data = pm.response.json().data;",
+                  "    pm.expect(data.user).to.have.property('uuid');",
+                  "    pm.expect(data.user).to.not.have.property('id');",
+                  "    pm.collectionVariables.set('sessionTimeoutMinutes', data.sessionTimeoutMinutes);",
+                  "    if (data.user.mustChangePassword) {",
+                  "        console.log('El usuario debe cambiar su contraseña antes de usar el resto de la API.');",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"email\": \"{{superadminEmail}}\",\n    \"password\": \"{{superadminPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Público. Limitado a 20 peticiones por minuto.\n\nRespuestas:\n- `200` login correcto, cookie `access_token` httpOnly.\n- `401` credenciales inválidas.\n- `423` usuario bloqueado o IP bloqueada."
+          }
+        },
+        {
+          "name": "Verify (renueva token)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "verify"
+              ]
+            },
+            "description": "Revalida la sesión y emite un token nuevo (sliding session). Devuelve `401` y limpia la cookie cuando la sesión ya no sirve."
+          }
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            },
+            "description": "Datos del usuario autenticado.\n\nDevuelve `403` con `errors.mustChangePassword` mientras el usuario no cambie su contraseña."
+          }
+        },
+        {
+          "name": "Cambiar contraseña",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"currentPassword\": \"{{superadminPassword}}\",\n    \"newPassword\": \"Adm1nSegura!26\",\n    \"newPassword_confirmation\": \"Adm1nSegura!26\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/change-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "change-password"
+              ]
+            },
+            "description": "Valida la contraseña actual y aplica los requisitos vigentes. Emite un token nuevo: la sesión anterior deja de ser válida.\n\nRecuerde actualizar `superadminPassword` en el environment después de cambiarla."
+          }
+        },
+        {
+          "name": "Registrar usuario",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"fullName\": \"Usuario Prueba\",\n    \"email\": \"usuario.prueba@local.test\",\n    \"roleName\": \"USER\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            },
+            "description": "Sólo SUPERADMIN y ADMIN.\n\nEl rol se envía por **nombre** (`SUPERADMIN`, `ADMIN`, `USER`); la API no acepta ids de base de datos. Sólo un SUPERADMIN puede crear cuentas `ADMIN` o `SUPERADMIN`.\n\n`password` es opcional: si se omite, el backend genera una contraseña temporal válida y la envía por correo. El usuario creado siempre nace con `mustChangePassword`.\n\nDevuelve el `uuid` público del usuario."
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "Limpia el token en base de datos y expira la cookie."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Configuración del Sistema",
+      "item": [
+        {
+          "name": "Requisitos de contraseña",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/password-requirements",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "password-requirements"
+              ]
+            },
+            "description": "Cualquier usuario autenticado: alimenta el formulario de cambio de contraseña."
+          }
+        },
+        {
+          "name": "Actualizar requisitos de contraseña",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"minLength\": 10,\n    \"expirationDays\": 90,\n    \"requireUppercase\": true,\n    \"requireLowercase\": true,\n    \"requireNumbers\": true,\n    \"requireSpecialChars\": true,\n    \"allowedSpecialChars\": \"!#$%&*?\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/password-requirements",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "password-requirements"
+              ]
+            },
+            "description": "SUPERADMIN y ADMIN.\n\n`expirationDays: 0` = la contraseña no caduca. Al caducar, el usuario puede iniciar sesión pero queda obligado a cambiarla."
+          }
+        },
+        {
+          "name": "Validar contraseña (público)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"password\": \"corta\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/password-requirements/validate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "password-requirements",
+                "validate"
+              ]
+            },
+            "description": "Público, 60 peticiones por minuto. Pensado para validar en vivo mientras se escribe. Devuelve `422` con la lista de incumplimientos."
+          }
+        },
+        {
+          "name": "Configuración de autenticación",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/security/login-attempt-settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "security",
+                "login-attempt-settings"
+              ]
+            },
+            "description": "SUPERADMIN y ADMIN. Umbrales de bloqueo y tiempo máximo de inactividad."
+          }
+        },
+        {
+          "name": "Actualizar configuración de autenticación",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"maxUserAttempts\": 5,\n    \"maxIpAttempts\": 12,\n    \"sessionTimeoutMinutes\": 15\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/security/login-attempt-settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "security",
+                "login-attempt-settings"
+              ]
+            },
+            "description": "SUPERADMIN y ADMIN.\n\n`sessionTimeoutMinutes` es a la vez el TTL del JWT y el límite de inactividad."
+          }
+        },
+        {
+          "name": "Configuración de correo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/email-config",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "email-config"
+              ]
+            },
+            "description": "SUPERADMIN y ADMIN."
+          }
+        },
+        {
+          "name": "Actualizar configuración de correo",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"emailSupport\": \"soporte@tcproject.local\",\n    \"emailMode\": \"override\",\n    \"overrideEmail\": \"qa@tcproject.local\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/email-config",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "email-config"
+              ]
+            },
+            "description": "SUPERADMIN y ADMIN.\n\n`emailMode`:\n- `normal`: se envía al destinatario real.\n- `override`: todo se redirige a `overrideEmail` (obligatorio en este modo).\n- `disabled`: no se envía nada."
+          }
+        },
+        {
+          "name": "Enviar correo de prueba",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"email\": \"destinatario@ejemplo.com\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/email-config/test",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "email-config",
+                "test"
+              ]
+            },
+            "description": "SUPERADMIN y ADMIN. Respeta el modo configurado: en `override` llega a `overrideEmail`, en `disabled` responde `422`.\n\nCon `MAIL_MAILER=log` el correo queda en `storage/logs/laravel.log`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Seguridad — Bloqueos",
+      "item": [
+        {
+          "name": "Resumen",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/security/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "security",
+                "summary"
+              ]
+            },
+            "description": "Contadores de usuarios e IPs bloqueados actualmente."
+          }
+        },
+        {
+          "name": "Usuarios bloqueados",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/security/users/blocked?perPage=15&onlyActive=0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "security",
+                "users",
+                "blocked"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "15",
+                  "description": "Máximo 100"
+                },
+                {
+                  "key": "onlyActive",
+                  "value": "0",
+                  "description": "1 = sólo los que siguen bloqueados"
+                }
+              ]
+            },
+            "description": "Historial completo de bloqueos, incluidos los ya liberados. Cada fila trae su `uuid` y el `userUuid` del usuario; no hay ids internos. `canUnblock` indica si la fila admite desbloqueo."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const rows = pm.response.json().data.data;",
+                  "if (rows.length) {",
+                  "    pm.collectionVariables.set('blockedUserUuid', rows[0].userUuid);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "IPs bloqueadas",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/security/ips/blocked?perPage=15&onlyActive=0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "security",
+                "ips",
+                "blocked"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "15",
+                  "description": "Máximo 100"
+                },
+                {
+                  "key": "onlyActive",
+                  "value": "1",
+                  "description": "1 = sólo las que siguen bloqueadas"
+                }
+              ]
+            },
+            "description": "Historial de bloqueos de IP, incluidas las liberadas."
+          }
+        },
+        {
+          "name": "Desbloquear usuario",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/security/users/{{blockedUserUuid}}/unlock",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "security",
+                "users",
+                "{{blockedUserUuid}}",
+                "unlock"
+              ]
+            },
+            "description": "SUPERADMIN y ADMIN. Se identifica al usuario por su `uuid` público (campo `userUuid` de `Usuarios bloqueados`), nunca por id.\n\nPone a cero los fallos y registra el desbloqueo con el administrador que lo realizó."
+          }
+        },
+        {
+          "name": "Desbloquear IP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"ipAddress\": \"127.0.0.1\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/security/ips/unlock",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "security",
+                "ips",
+                "unlock"
+              ]
+            },
+            "description": "SUPERADMIN y ADMIN.\n\nSi nadie puede entrar por tener la IP bloqueada, existe la salida por consola: `php artisan security:unlock-ip 1.2.3.4`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Tablero",
+      "description": "Pantalla de entrada del sistema. Abierta a cualquier usuario autenticado.",
+      "item": [
+        {
+          "name": "Tablero de tipo de cambio",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/exchange-rate?days=30",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "exchange-rate"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "30"
+                }
+              ]
+            },
+            "description": "Todo lo que pinta la pantalla en una sola llamada:\n\n- `today`: valor vigente, publicacion de Banxico con su fecha, factor aplicado, origen (`Calculo automatico` / `Captura manual`) y `change` con la variacion contra el registro vigente anterior (`amount`, `percentage`, `direction`, `comparedTo`).\n- `nextBusinessDay`: valor del dia habil siguiente y `calculatedAt`.\n- `manualEntries`: cuantos registros del periodo llevan captura manual.\n- `automaticProcess`: ultima corrida del proceso (`executed` / `failed` / `pending`), cuando corrio y si fue hoy.\n- `fluctuation`: la serie de la grafica.\n\nCuando aun no hay registro para la fecha, la tarjeta responde `available: false` con la fecha y su etiqueta, sin romper la pantalla.\n\n`days` ajusta la ventana del periodo y de la serie (1-365, por omision 30)."
+          }
+        },
+        {
+          "name": "Fluctuacion",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/exchange-rate/fluctuation?days=30",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "exchange-rate",
+                "fluctuation"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "30"
+                }
+              ]
+            },
+            "description": "Solo la serie, para recargar la grafica con otra ventana sin volver a pedir las tarjetas.\n\nCada punto trae `date`, `effectiveRate` (linea del tipo de cambio calculado), `publishedRate` (linea de la publicacion de Banxico) y `source`. Incluye el dia habil siguiente cuando ya esta calculado, y `min`/`max` para escalar el eje."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Tipo de cambio",
+      "description": "Publicacion FIX de Banxico, factores por rango y captura manual.\n\nLa publicacion de un dia habil aplica al dia habil siguiente; sobre ella se aplica el factor cuyo rango la contiene: [desde, hasta), inferior inclusivo y superior exclusivo.",
+      "item": [
+        {
+          "name": "Tipo de cambio vigente (hoy)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/exchange-rates/current",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "exchange-rates",
+                "current"
+              ]
+            },
+            "description": "Tipo de cambio aplicable al dia en curso. Cualquier usuario autenticado."
+          }
+        },
+        {
+          "name": "Registros de tipo de cambio",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/exchange-rates?perPage=20&month=2026-08&source=manual&includeDeleted=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "exchange-rates"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "20"
+                },
+                {
+                  "key": "month",
+                  "value": "2026-08",
+                  "disabled": true
+                },
+                {
+                  "key": "source",
+                  "value": "manual",
+                  "disabled": true
+                },
+                {
+                  "key": "includeDeleted",
+                  "value": "1",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Historico paginado. Cada fila trae la publicacion de Banxico con su fecha, el factor aplicado (`factorCode`/`factorValue`, copiados al momento del calculo), el valor calculado, el manual, el vigente y el origen (Automatico / Manual prevalece).\n\nFiltros: `from`, `to`, `month` (YYYY-MM), `source` (automatic|manual), `includeDeleted`, `perPage`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const filas = pm.response.json().data.data;",
+                  "const editable = filas.find((f) => f.isEditable);",
+                  "if (editable) { pm.collectionVariables.set('exchangeRateUuid', editable.uuid); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Fechas editables",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/exchange-rates/editable-dates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "exchange-rates",
+                "editable-dates"
+              ]
+            },
+            "description": "Dia en curso y dia habil siguiente: las unicas fechas que admiten captura manual."
+          }
+        },
+        {
+          "name": "Actualizar tipo de cambio (manual)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/exchange-rates/{{exchangeRateUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "exchange-rates",
+                "{{exchangeRateUuid}}"
+              ]
+            },
+            "description": "Correccion manual. El valor calculado por el sistema se conserva; el manual prevalece como vigente, incluso sobre calculos posteriores.\n\nEl motivo es obligatorio (minimo 5 caracteres) y queda en el historial.\n\nResponde 422 si la fecha esta fuera de la ventana de edicion.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"manualRate\": 18.6900,\n    \"reason\": \"Diferencia contra publicacion de Banxico\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Registrar tipo de cambio manual",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/exchange-rates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "exchange-rates"
+              ]
+            },
+            "description": "Alta manual de una fecha que aun no tiene calculo. El valor capturado prevalecera sobre cualquier calculo futuro.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"applicableDate\": \"2026-08-25\",\n    \"manualRate\": 18.7000,\n    \"reason\": \"Captura anticipada autorizada\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Eliminar tipo de cambio",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/exchange-rates/{{exchangeRateUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "exchange-rates",
+                "{{exchangeRateUuid}}"
+              ]
+            },
+            "description": "Baja logica; solo dentro de la ventana de edicion."
+          }
+        },
+        {
+          "name": "Sincronizar con Banxico",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/exchange-rates/sync",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "exchange-rates",
+                "sync"
+              ]
+            },
+            "description": "Ejecuta bajo demanda lo mismo que la tarea programada `exchange-rate:sync`.\n\nOpcionales: `date` (fecha de referencia YYYY-MM-DD) y `days` (dias hacia atras).\n\nResponde 502 si Banxico no contesta o falta BANXICO_TOKEN.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"days\": 7\n}"
+            }
+          }
+        },
+        {
+          "name": "Factores",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/exchange-rates/factors?includeDeleted=0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "exchange-rates",
+                "factors"
+              ],
+              "query": [
+                {
+                  "key": "includeDeleted",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "Rangos y factores. includeDeleted=1 agrega los eliminados (checkbox \"Ver eliminados\")."
+          }
+        },
+        {
+          "name": "Nuevo factor",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/exchange-rates/factors",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "exchange-rates",
+                "factors"
+              ]
+            },
+            "description": "Alta de un rango. El limite inferior es inclusivo y el superior exclusivo; los rangos vigentes no pueden traslaparse (422 indicando la clave en conflicto).\n\nLa clave visible la asigna el sistema.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"rangeFrom\": 18.5,\n    \"rangeTo\": 19.5,\n    \"factor\": 1.0042\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const factor = pm.response.json().data;",
+                  "if (factor && factor.uuid) { pm.collectionVariables.set('factorUuid', factor.uuid); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Guardar factores por lote",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"factors\": [\n        { \"rangeFrom\": 0, \"rangeTo\": 15.1, \"factor\": 1.0000 },\n        { \"rangeFrom\": 15.1, \"rangeTo\": 16.3, \"factor\": 1.0118 },\n        { \"rangeFrom\": 16.3, \"rangeTo\": 17.5, \"factor\": 1.0075 },\n        { \"rangeFrom\": 17.5, \"rangeTo\": 18.5, \"factor\": 1.0035 },\n        { \"rangeFrom\": 18.5, \"rangeTo\": 19.5, \"factor\": 1.0042 },\n        { \"rangeFrom\": 19.5, \"rangeTo\": 25, \"factor\": 1.0009 }\n    ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/exchange-rates/factors/bulk",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "exchange-rates",
+                "factors",
+                "bulk"
+              ]
+            },
+            "description": "Guarda varios factores en una sola llamada: es la forma de salvar la tabla completa desde la pantalla de administracion.\n\nCada elemento **con `uuid` actualiza** el factor existente y **sin `uuid` da de alta**, asi que el mismo envio sirve para altas, cambios o una mezcla de ambos.\n\nEs **todo o nada**: si un rango es invalido o el conjunto resultante se traslapa, no se guarda ninguno y el 422 senala el indice del elemento en conflicto (`factors.2.rangeFrom`).\n\nEl traslape se valida sobre el conjunto que quedara vigente -incluyendo los factores que el lote no toca-, no elemento por elemento: asi un reacomodo de varios rangos a la vez no se rechaza por estados intermedios.\n\nTambien se acepta el arreglo directo en la raiz, sin la envoltura `factors`.\n\nDevuelve `saved` (lo guardado en este envio) y `factors` (la tabla vigente completa)."
+          }
+        },
+        {
+          "name": "Editar factor",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/exchange-rates/factors/{{factorUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "exchange-rates",
+                "factors",
+                "{{factorUuid}}"
+              ]
+            },
+            "description": "Cambia rango y/o factor, revalidando que no se traslape con otro vigente.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"factor\": 1.0050\n}"
+            }
+          }
+        },
+        {
+          "name": "Eliminar factor",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/exchange-rates/factors/{{factorUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "exchange-rates",
+                "factors",
+                "{{factorUuid}}"
+              ]
+            },
+            "description": "Baja logica: el factor deja de aplicar, pero el historico conserva los calculos que produjo."
+          }
+        },
+        {
+          "name": "Restaurar factor",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/exchange-rates/factors/{{factorUuid}}/restore",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "exchange-rates",
+                "factors",
+                "{{factorUuid}}",
+                "restore"
+              ]
+            },
+            "description": "Reactiva un factor eliminado, siempre que su rango no se traslape con los vigentes."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Dias feriados",
+      "description": "Registro de dias feriados. Se usan para determinar el dia habil siguiente en el calculo del tipo de cambio.\n\nA partir del 15 de noviembre el sistema envia un recordatorio diario por correo a todos los usuarios activos mientras el anio siguiente no tenga ni un dia capturado.",
+      "item": [
+        {
+          "name": "Dias feriados del anio",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/holidays?year=2026&includeDeleted=0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "holidays"
+              ],
+              "query": [
+                {
+                  "key": "year",
+                  "value": "2026"
+                },
+                {
+                  "key": "includeDeleted",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "Calendario de un anio. Sin `year` devuelve el anio en curso; `includeDeleted=1` agrega los eliminados (checkbox \"Ver eliminados\").\n\nConsulta abierta a cualquier usuario autenticado: el calendario afecta el calculo del tipo de cambio que todos consultan."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const filas = pm.response.json().data;",
+                  "if (filas.length) { pm.collectionVariables.set('holidayUuid', filas[0].uuid); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Estado de captura",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/holidays/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "holidays",
+                "status"
+              ]
+            },
+            "description": "Alimenta el aviso de la pantalla: anios cubiertos con su total, `pendingYear` cuando falta capturar el siguiente, `reminderActive` si el recordatorio automatico ya corre y `reminderStartsOn` con la fecha en que empieza."
+          }
+        },
+        {
+          "name": "Nuevo dia feriado",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/holidays",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "holidays"
+              ]
+            },
+            "description": "Alta individual. La fecha debe ser unica entre los vigentes y caer dentro del rango administrable (anio en curso y siguiente, segun HOLIDAYS_YEARS_AHEAD).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"holidayDate\": \"2026-04-03\",\n    \"description\": \"Viernes Santo\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Capturar calendario por lote",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/holidays/bulk",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "holidays",
+                "bulk"
+              ]
+            },
+            "description": "Captura el calendario completo de un anio en una sola operacion: es lo natural al preparar el anio siguiente.\n\nLos elementos con `uuid` actualizan y el resto dan de alta. Es todo o nada: si una fecha se repite o ya existe, no se guarda ninguna y el error senala el indice (`holidays.2.holidayDate`).\n\nTambien se acepta el arreglo directo en la raiz, sin la envoltura `holidays`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"holidays\": [\n        { \"holidayDate\": \"2027-01-01\", \"description\": \"Ano Nuevo\" },\n        { \"holidayDate\": \"2027-02-01\", \"description\": \"Dia de la Constitucion\" },\n        { \"holidayDate\": \"2027-03-15\", \"description\": \"Natalicio de Benito Juarez\" },\n        { \"holidayDate\": \"2027-05-01\", \"description\": \"Dia del Trabajo\" },\n        { \"holidayDate\": \"2027-09-16\", \"description\": \"Independencia de Mexico\" },\n        { \"holidayDate\": \"2027-11-15\", \"description\": \"Revolucion Mexicana\" },\n        { \"holidayDate\": \"2027-12-25\", \"description\": \"Navidad\" }\n    ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Editar dia feriado",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/holidays/{{holidayUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "holidays",
+                "{{holidayUuid}}"
+              ]
+            },
+            "description": "Cambia fecha y/o descripcion, revalidando unicidad y rango de anios.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"description\": \"Viernes Santo (jueves y viernes)\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Eliminar dia feriado",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/holidays/{{holidayUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "holidays",
+                "{{holidayUuid}}"
+              ]
+            },
+            "description": "Baja logica. La fecha deja de contar como inhabil y puede volver a capturarse; el historial conserva el registro."
+          }
+        },
+        {
+          "name": "Restaurar dia feriado",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/holidays/{{holidayUuid}}/restore",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "holidays",
+                "{{holidayUuid}}",
+                "restore"
+              ]
+            },
+            "description": "Reactiva un dia eliminado, siempre que su fecha no este ocupada por otro vigente."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auditoría",
+      "description": "Historial de solicitudes y de cambios. Sólo SUPERADMIN y ADMIN.",
+      "item": [
+        {
+          "name": "Línea de tiempo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/audit/logs?perPage=20&table=users&event=updated&from=2026-01-01&to=2026-12-31",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "audit",
+                "logs"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "20"
+                },
+                {
+                  "key": "table",
+                  "value": "users",
+                  "description": "Nombre de la tabla auditada"
+                },
+                {
+                  "key": "event",
+                  "value": "updated",
+                  "description": "created | updated | softDeleted | restored | deleted",
+                  "disabled": true
+                },
+                {
+                  "key": "from",
+                  "value": "2026-01-01",
+                  "disabled": true
+                },
+                {
+                  "key": "to",
+                  "value": "2026-12-31",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Cambios registrados, del más reciente al más antiguo. Cada entrada trae `eventLabel` (Alta, Actualización, Eliminación lógica…), el `recordLabel` del registro, `changedColumns` con `oldValues`/`newValues`, las marcas de tiempo del registro afectado y el autor («Proceso automático» cuando no lo originó una persona).\n\nFiltros: `table`, `recordUuid`, `event`, `actorUuid`, `from`, `to`, `perPage`."
+          }
+        },
+        {
+          "name": "Historial de un registro",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/audit/records/users/{{blockedUserUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "audit",
+                "records",
+                "users",
+                "{{blockedUserUuid}}"
+              ]
+            },
+            "description": "Historial completo de un registro concreto: es lo que alimenta el «Historial de la pantalla».\n\nLa ruta recibe el nombre de la tabla y el `uuid` público del registro, nunca un id."
+          }
+        },
+        {
+          "name": "Bitácora de solicitudes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/audit/requests?perPage=20&method=POST&path=auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "audit",
+                "requests"
+              ],
+              "query": [
+                {
+                  "key": "perPage",
+                  "value": "20"
+                },
+                {
+                  "key": "method",
+                  "value": "POST",
+                  "disabled": true
+                },
+                {
+                  "key": "path",
+                  "value": "auth",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Una fila por solicitud interceptada, con los cambios que produjo en `changes`.\n\nEl `payload` ya viene saneado: contraseñas y tokens aparecen como `[REDACTADO]` y los ids internos no se almacenan.\n\nFiltros: `method`, `path`, `actorUuid`, `statusCode`, `perPage`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Escenarios de prueba",
+      "description": "Secuencias para comprobar el comportamiento de bloqueo.",
+      "item": [
+        {
+          "name": "Login fallido (usuario normal)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"email\": \"usuario.prueba@local.test\",\n    \"password\": \"contrasena-incorrecta\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Repita hasta alcanzar `maxUserAttempts` (5 por defecto): la última respuesta pasa de `401` a `423` y el usuario queda bloqueado hasta que un administrador lo libere.\n\nLos fallos se cuentan en ventana deslizante de 24 h; un login correcto pone el contador a cero."
+          }
+        },
+        {
+          "name": "Login fallido (SUPERADMIN, cuenta no se bloquea)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"email\": \"{{superadminEmail}}\",\n    \"password\": \"contrasena-incorrecta\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "SUPERADMIN y ADMIN nunca se bloquean de cuenta: siempre responde `401`.\n\nSu **IP** sí suma fallos y sí se bloquea al llegar a `maxIpAttempts`."
+          }
+        },
+        {
+          "name": "Health",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Comprobación pública de que la API responde."
+          }
+        }
+      ]
+    }
+  ]
+}
