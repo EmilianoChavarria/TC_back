@@ -48,6 +48,23 @@ class RegisterUserAction
                 ]);
             }
 
+            // Del superadministrador y del administrador sólo existe una cuenta
+            // activa; el resto de la organización son usuarios.
+            if (in_array($roleName, Role::SINGLE_ACCOUNT, true)) {
+                $taken = User::query()
+                    ->where('roleId', $role->id)
+                    ->where('isActive', true)
+                    ->whereNull('deletedAt')
+                    ->where('email', '!=', $data['email'])
+                    ->exists();
+
+                if ($taken) {
+                    throw ValidationException::withMessages([
+                        'roleName' => ["Ya existe una cuenta activa con rol {$roleName}; désela de baja antes de crear otra."],
+                    ]);
+                }
+            }
+
             $generated = empty($data['password']);
             $password = $generated
                 ? $this->passwords->generateCompliantPassword()
@@ -74,7 +91,6 @@ class RegisterUserAction
                 'fullName' => (string) $data['fullName'],
                 'passwordHash' => Hash::make($password),
                 'roleId' => (int) $role->id,
-                'preferredLanguage' => (string) ($data['preferredLanguage'] ?? 'es'),
                 'isActive' => true,
                 'mustChangePassword' => true,
                 'passwordChangedAt' => $now,
@@ -105,8 +121,7 @@ class RegisterUserAction
                 new UserRegisteredMail(
                     (string) $user->fullName,
                     (string) $user->email,
-                    $password,
-                    (string) $user->preferredLanguage
+                    $password
                 ),
                 (string) $user->email
             );

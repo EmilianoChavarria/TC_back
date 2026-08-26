@@ -116,7 +116,6 @@ class AuthController extends Controller
                     'fullName' => (string) $user->fullName,
                     'email' => (string) $user->email,
                     'roleName' => $user->roleName(),
-                    'preferredLanguage' => (string) $user->preferredLanguage,
                     'mustChangePassword' => (bool) $user->mustChangePassword,
                     'passwordExpiresAt' => $this->passwords->expiresAt($user->passwordChangedAt)?->toIso8601String(),
                 ],
@@ -138,7 +137,6 @@ class AuthController extends Controller
             'fullName' => (string) $user->fullName,
             'email' => (string) $user->email,
             'roleName' => $user->roleName(),
-            'preferredLanguage' => (string) $user->preferredLanguage,
             'mustChangePassword' => (bool) $user->mustChangePassword,
         ]));
     }

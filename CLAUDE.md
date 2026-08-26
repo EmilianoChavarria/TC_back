@@ -156,31 +156,34 @@ El sistema opera sobre el **tipo de cambio FIX** que Banxico publica cada día
 hábil (serie `SF43718`). La publicación de un día hábil **aplica al día hábil
 siguiente**: el tipo de cambio de hoy proviene de la publicación de ayer.
 
-### Cálculo diario
+### Proceso diario
 
 1. `exchange-rate:sync` consulta la SIE API de Banxico (ventana de varios días,
    así se recupera sola de un día caído).
 2. Para cada publicación busca el **factor vigente cuyo rango la contiene**:
    `[rangeFrom, rangeTo)`, límite inferior inclusivo y superior exclusivo.
-3. `calculatedRate = publicación × factor`, redondeado a `config('exchange.scale')`.
+3. El tipo de cambio **es la publicación tal cual**: `calculatedRate = publicación`,
+   redondeada a `config('exchange.scale')`. Sobre ella **no se aplica ninguna
+   operación**; el factor sólo se guarda y se muestra al lado.
 4. Se guarda en `exchangerates` con la fecha aplicable = día hábil siguiente al
    de la publicación.
 
-Ejemplo: publicación 18.7690 con factor 1.0042 (clave 5, rango 18.5–19.5) da
-18.8478.
+Ejemplo: publicación 18.7690 con factor 1.0042 (clave 5, rango 18.5–19.5) queda
+como tipo de cambio 18.7690 y factor 1.0042.
 
 Del factor se guarda una **copia** en el registro (`factorCode`, `factorValue`):
-si el factor cambia después, el histórico conserva el que realmente se aplicó.
+si el factor cambia después, el histórico conserva el que aplicaba ese día.
 
-Si ninguna clave cubre la publicación no se inventa un factor: se conserva la
-publicación tal cual, se marca `factorApplied: false` y queda el aviso en el log
-para que el administrador cubra el rango.
+Si ninguna clave cubre la publicación se marca `factorApplied: false` y queda el
+aviso en el log para que el administrador cubra el rango; el tipo de cambio no
+cambia por ello.
 
 ### Captura manual
 
-`calculatedRate` es del proceso y **nunca se sobrescribe**. La corrección del
-usuario vive en `manualRate`, con motivo obligatorio, y es la que prevalece como
-`effectiveRate` incluso si el cálculo automático llega después. La ventana de
+`calculatedRate` es la publicación del proceso y **nunca se sobrescribe**. La
+corrección del usuario se hace **sobre el tipo de cambio de Banxico**, vive en
+`manualRate` con motivo obligatorio y prevalece como `effectiveRate` incluso si
+la sincronización automática llega después. La ventana de
 edición es sólo el día en curso y el día hábil siguiente
 (`config('exchange.manual_edit')`).
 
@@ -229,7 +232,7 @@ como evento `holidayReminder.sent` en la línea de tiempo, con autor
 
 Los rangos vigentes **no pueden traslaparse**; se valida en
 `ExchangeRateFactorService` tanto al crear como al editar y al restaurar. La
-baja es lógica (`deletedAt`), así el histórico conserva el factor que aplicó.
+baja es lógica (`deletedAt`), así el histórico conserva el factor que aplicaba.
 La clave visible (`code`) es un consecutivo propio, independiente de la PK.
 
 `POST /exchange-rates/factors/bulk` guarda la tabla completa de una vez: los
@@ -244,6 +247,14 @@ No son dinámicos: `SUPERADMIN`, `ADMIN`, `USER`, como constantes en
 `App\Models\Role`. El middleware `role:SUPERADMIN,ADMIN` protege las rutas
 administrativas.
 
+La organización tiene **una sola cuenta activa de SUPERADMIN, una de ADMIN y
+tantos USER como haga falta** (`Role::SINGLE_ACCOUNT`). La regla se aplica tanto
+en el alta como al cambiar el rol de una cuenta existente y al reactivar una
+dada de baja (`UserService`). El alta rechaza una
+segunda cuenta privilegiada mientras la anterior siga vigente: para reemplazarla
+hay que dar de baja la existente. `auth/register` asume rol `USER` cuando no se
+envía `roleName`.
+
 | | SUPERADMIN | ADMIN | USER |
 |---|---|---|---|
 | Administra seguridad y configuración | Sí | Sí | No |
@@ -251,6 +262,22 @@ administrativas.
 | Puede crear SUPERADMIN o ADMIN | Sí | No | No |
 | Su cuenta se bloquea por intentos fallidos | No | No | Sí |
 | Su IP se bloquea por intentos fallidos | Sí | Sí | Sí |
+
+## Administración de cuentas
+
+`UserService` concentra las reglas de la gestión de usuarios:
+
+- Nadie cambia su propio rol ni se da de baja a sí mismo; el backend lo rechaza
+  aunque la interfaz lo permitiera.
+- Asignar `SUPERADMIN` o `ADMIN` exige ser SUPERADMIN y que no exista otra
+  cuenta activa con ese rol. Reactivar una cuenta privilegiada revalida lo mismo.
+- Sólo un SUPERADMIN puede dar de baja la cuenta de superadministrador.
+- La baja es lógica (`isActive` + `deletedAt`) y **corta la sesión abierta** de
+  esa cuenta borrando su `sessionToken`.
+- `users/{uuid}/reset-password` genera una contraseña temporal nueva, marca
+  `mustChangePassword`, invalida la sesión y la envía por correo. **La contraseña
+  nunca viaja en la respuesta.** Si el correo no sale, responde 502: sin correo
+  esa cuenta quedaría inaccesible.
 
 ## Autenticación
 
@@ -297,13 +324,13 @@ app/
   Mail/                Mailables; Concerns\HasOverrideNotice para modo override
   Models/
   Services/            JwtService, AuthAttemptService, PasswordValidationService,
-                       LoginAttemptSettingsService, EmailSenderService
+                       LoginAttemptSettingsService, EmailSenderService, UserService
   Services/Audit/      AuditContext, AuditRecorder, AuditSanitizer
   Services/Exchange/   BanxicoFixService, BusinessDayService, HolidayService,
                        ExchangeRateService, ExchangeRateFactorService
   Support/             ApiResponse, AuthCookie
-routes/api/            auth.php, security.php, emailConfig.php, exchangeRates.php,
-                       holidays.php, audit.php
+routes/api/            auth.php, users.php, security.php, emailConfig.php,
+                       exchangeRates.php, holidays.php, audit.php, dashboard.php
 routes/console.php     Programación diaria (requiere cron con schedule:run)
 docs/                  Colección y environment de Postman
 ```
@@ -322,6 +349,8 @@ Toda respuesta usa la envoltura de `App\Support\ApiResponse`:
   respaldo mientras no exista registro.
 - Todo el correo sale por `EmailSenderService`, que respeta el modo
   `normal | override | disabled` de `emailconfig`. No se llama a `Mail::` directo.
+- El portal envía **siempre en español**: hay una sola carpeta de traducciones
+  (`lang/es`) y los mailables no reciben locale.
 
 ## Comandos
 

@@ -22,9 +22,18 @@ return [
     |--------------------------------------------------------------------------
     | Precisión
     |--------------------------------------------------------------------------
-    | Decimales con los que se redondea el resultado de publicación × factor.
+    | Decimales con los que se redondea el tipo de cambio.
     */
     'scale' => (int) env('EXCHANGE_RATE_SCALE', 4),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Decimales del factor
+    |--------------------------------------------------------------------------
+    | Los factores se capturan y se muestran con esta precisión, independiente
+    | de la del tipo de cambio.
+    */
+    'factor_scale' => (int) env('EXCHANGE_FACTOR_SCALE', 3),
 
     /*
     |--------------------------------------------------------------------------

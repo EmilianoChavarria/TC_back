@@ -10,8 +10,8 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Proceso diario: trae la publicación FIX de Banxico, le aplica el factor de su
- * rango y deja el tipo de cambio de la fecha aplicable correspondiente.
+ * Proceso diario: trae la publicación FIX de Banxico y la deja como tipo de
+ * cambio de la fecha aplicable, junto con el factor informativo de su rango.
  */
 class SyncExchangeRateCommand extends Command
 {
@@ -19,7 +19,7 @@ class SyncExchangeRateCommand extends Command
                             {--date= : Fecha de referencia YYYY-MM-DD (por omisión, hoy)}
                             {--days= : Días hacia atrás a consultar}';
 
-    protected $description = 'Sincroniza el tipo de cambio FIX de Banxico y aplica el factor vigente';
+    protected $description = 'Sincroniza el tipo de cambio FIX de Banxico y registra el factor de su rango';
 
     public function handle(ExchangeRateService $rates, AuditRecorder $audit): int
     {

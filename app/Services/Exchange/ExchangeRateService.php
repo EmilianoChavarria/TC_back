@@ -5,6 +5,7 @@ namespace App\Services\Exchange;
 use App\Models\ExchangeRate;
 use App\Models\User;
 use App\Services\Audit\AuditRecorder;
+use App\Support\Decimals;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
@@ -13,11 +14,13 @@ use Illuminate\Validation\ValidationException;
  * Cálculo y captura del tipo de cambio.
  *
  * Regla del negocio: la publicación de Banxico de un día hábil aplica al día
- * hábil siguiente. Sobre esa publicación se busca el factor cuyo rango la
- * contiene y el resultado es publicación × factor.
+ * hábil siguiente. El tipo de cambio vigente ES esa publicación: no se le
+ * aplica ninguna operación. El factor cuyo rango contiene a la publicación se
+ * resuelve y se guarda sólo como dato informativo, para mostrarlo junto al
+ * tipo de cambio.
  *
- * La captura manual nunca pisa el valor calculado: se guarda aparte y prevalece
- * como vigente, incluso si el cálculo automático llega después.
+ * La captura manual nunca pisa la publicación: se guarda aparte y prevalece
+ * como vigente, incluso si la sincronización automática llega después.
  */
 class ExchangeRateService
 {
@@ -25,6 +28,7 @@ class ExchangeRateService
     public const EVENT_SYNC = 'exchangeRate.sync';
     public const EVENT_SYNC_FAILED = 'exchangeRate.syncFailed';
     public const EVENT_MANUAL_OVERRIDE = 'exchangeRate.manualOverride';
+    public const EVENT_MANUAL_RESET = 'exchangeRate.manualReset';
 
     public function __construct(
         private readonly BanxicoFixService $banxico,
@@ -70,8 +74,9 @@ class ExchangeRateService
     }
 
     /**
-     * Guarda una publicación y su cálculo en la fecha aplicable que le toca
-     * (el día hábil siguiente al de la publicación).
+     * Guarda una publicación en la fecha aplicable que le toca (el día hábil
+     * siguiente al de la publicación), junto con el factor informativo de su
+     * rango.
      */
     public function applyPublication(Carbon $publishedDate, string $publishedRate): ExchangeRate
     {
@@ -80,34 +85,33 @@ class ExchangeRateService
         $now = Carbon::now();
 
         if (!$factor) {
-            // Sin factor no se inventa uno: se conserva la publicación tal cual
-            // y queda registrado para que el administrador cubra el rango.
+            // El factor es informativo, pero si ningún rango cubre la
+            // publicación queda registrado para que el administrador lo cubra.
             Log::warning('[ExchangeRate] ninguna clave de factor cubre la publicación', [
                 'publishedDate' => $publishedDate->toDateString(),
                 'publishedRate' => $publishedRate,
             ]);
         }
 
-        $calculated = $factor
-            ? $this->multiply($publishedRate, (string) $factor->factor)
-            : $this->round($publishedRate);
+        // El tipo de cambio del proceso automático es la publicación tal cual.
+        $automatic = $this->round($publishedRate);
 
         $rate = ExchangeRate::query()->where('applicableDate', $applicableDate->toDateString())->first();
 
         $attributes = [
-            'publishedRate' => $publishedRate,
+            'publishedRate' => Decimals::roundRate($publishedRate),
             'publishedDate' => $publishedDate->toDateString(),
             'factorId' => $factor?->id,
             'factorCode' => $factor?->code,
             'factorValue' => $factor?->factor,
-            'calculatedRate' => $calculated,
+            'calculatedRate' => $automatic,
             'updatedAt' => $now,
         ];
 
         if (!$rate) {
             $rate = ExchangeRate::create($attributes + [
                 'applicableDate' => $applicableDate->toDateString(),
-                'effectiveRate' => $calculated,
+                'effectiveRate' => $automatic,
                 'source' => ExchangeRate::SOURCE_AUTOMATIC,
                 'createdAt' => $now,
             ]);
@@ -116,7 +120,7 @@ class ExchangeRateService
         }
 
         // El valor manual previamente capturado sigue prevaleciendo.
-        $attributes['effectiveRate'] = $rate->manualRate ?? $calculated;
+        $attributes['effectiveRate'] = $rate->manualRate ?? $automatic;
         $attributes['source'] = $rate->manualRate !== null
             ? ExchangeRate::SOURCE_MANUAL
             : ExchangeRate::SOURCE_AUTOMATIC;
@@ -134,7 +138,10 @@ class ExchangeRateService
     {
         $this->assertEditable($rate);
 
+        // Lo que estaba vigente antes del cambio: es contra eso que se compara
+        // la corrección, aunque nunca haya existido una captura manual previa.
         $previousManual = $rate->manualRate;
+        $previousEffective = $rate->effectiveRate;
         $now = Carbon::now();
 
         $rate->fill([
@@ -153,9 +160,10 @@ class ExchangeRateService
             (string) $rate->uuid,
             $rate->applicableDate->toDateString(),
             [
-                'previousManualRate' => $previousManual,
-                'manualRate' => (string) $rate->manualRate,
-                'calculatedRate' => (string) $rate->calculatedRate,
+                'previousEffectiveRate' => Decimals::rate($previousEffective),
+                'previousManualRate' => Decimals::rate($previousManual),
+                'manualRate' => Decimals::rate($rate->manualRate),
+                'publishedRate' => Decimals::rate($rate->publishedRate),
                 'reason' => $reason,
             ],
         );
@@ -164,8 +172,8 @@ class ExchangeRateService
     }
 
     /**
-     * Alta manual de una fecha sin cálculo previo. El valor capturado
-     * prevalecerá sobre cualquier cálculo posterior.
+     * Alta manual de una fecha sin publicación previa. El valor capturado
+     * prevalecerá sobre la publicación que llegue después.
      */
     public function createManual(Carbon $applicableDate, string $manualRate, string $reason, ?User $actor): ExchangeRate
     {
@@ -191,6 +199,94 @@ class ExchangeRateService
             'createdAt' => $now,
             'updatedAt' => $now,
         ]);
+    }
+
+    /**
+     * Normaliza el histórico después de retirar el cálculo publicación × factor.
+     *
+     * Quita las capturas manuales y deja como vigente la publicación de Banxico
+     * del registro. Los registros creados a mano, sin publicación detrás, no
+     * tienen a qué volver: se listan aparte y sólo se marcan como eliminados si
+     * se pide explícitamente.
+     *
+     * @return array{cleared: int, normalized: int, orphans: array<int, string>, orphansDropped: int}
+     */
+    public function clearManualOverrides(bool $dropOrphans = false, bool $dryRun = false): array
+    {
+        $result = ['cleared' => 0, 'normalized' => 0, 'orphans' => [], 'orphansDropped' => 0];
+        $now = Carbon::now();
+
+        $rates = ExchangeRate::query()->orderBy('applicableDate')->get();
+
+        foreach ($rates as $rate) {
+            $isManual = $rate->manualRate !== null;
+
+            // Sin publicación no hay tipo de cambio al cual regresar.
+            if ($rate->publishedRate === null) {
+                if (!$isManual) {
+                    continue;
+                }
+
+                $result['orphans'][] = $rate->applicableDate->toDateString();
+
+                if ($dropOrphans && $rate->deletedAt === null) {
+                    $result['orphansDropped']++;
+
+                    if (!$dryRun) {
+                        $rate->fill(['deletedAt' => $now, 'updatedAt' => $now])->save();
+                    }
+                }
+
+                continue;
+            }
+
+            $automatic = $this->round((string) $rate->publishedRate);
+
+            $attributes = [
+                'calculatedRate' => $automatic,
+                'effectiveRate' => $automatic,
+                'source' => ExchangeRate::SOURCE_AUTOMATIC,
+                'updatedAt' => $now,
+            ];
+
+            if ($isManual) {
+                $attributes += [
+                    'manualRate' => null,
+                    'manualReason' => null,
+                    'manualSetByUserId' => null,
+                    'manualSetAt' => null,
+                ];
+            }
+
+            $rate->fill($attributes);
+
+            if (!$rate->isDirty()) {
+                continue;
+            }
+
+            $isManual ? $result['cleared']++ : $result['normalized']++;
+
+            if (!$dryRun) {
+                $rate->save();
+            }
+        }
+
+        if (!$dryRun) {
+            $this->audit->event(
+                self::EVENT_MANUAL_RESET,
+                'exchangerates',
+                null,
+                'Limpieza de capturas manuales',
+                [
+                    'cleared' => $result['cleared'],
+                    'normalized' => $result['normalized'],
+                    'orphans' => $result['orphans'],
+                    'orphansDropped' => $result['orphansDropped'],
+                ],
+            );
+        }
+
+        return $result;
     }
 
     public function delete(ExchangeRate $rate): ExchangeRate
@@ -244,15 +340,6 @@ class ExchangeRateService
                 'applicableDate' => ['La edición manual sólo está habilitada para el día actual y el día hábil siguiente.'],
             ]);
         }
-    }
-
-    private function multiply(string $rate, string $factor): string
-    {
-        $scale = (int) config('exchange.scale', 4);
-        // bcmul evita el error de coma flotante antes de redondear.
-        $product = bcmul($rate, $factor, $scale + 6);
-
-        return $this->round($product);
     }
 
     private function round(string $value): string

@@ -19,13 +19,14 @@ class ExchangeRateFactor extends Model
 
     protected $table = 'exchangeratefactors';
 
-    protected $hidden = ['id'];
+    protected $hidden = ['id', 'updatedByUserId'];
 
     protected $fillable = [
         'code',
         'rangeFrom',
         'rangeTo',
         'factor',
+        'updatedByUserId',
         'deletedAt',
     ];
 
@@ -38,6 +39,11 @@ class ExchangeRateFactor extends Model
         'updatedAt' => 'datetime',
         'deletedAt' => 'datetime',
     ];
+
+    public function updatedBy()
+    {
+        return $this->belongsTo(User::class, 'updatedByUserId');
+    }
 
     public function scopeActive(Builder $query): Builder
     {

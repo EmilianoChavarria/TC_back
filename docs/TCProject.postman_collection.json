@@ -183,7 +183,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"fullName\": \"Usuario Prueba\",\n    \"email\": \"usuario.prueba@local.test\",\n    \"roleName\": \"USER\"\n}"
+              "raw": "{\n    \"fullName\": \"Usuario Prueba\",\n    \"email\": \"usuario.prueba@local.test\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/auth/register",
@@ -195,7 +195,7 @@
                 "register"
               ]
             },
-            "description": "Sólo SUPERADMIN y ADMIN.\n\nEl rol se envía por **nombre** (`SUPERADMIN`, `ADMIN`, `USER`); la API no acepta ids de base de datos. Sólo un SUPERADMIN puede crear cuentas `ADMIN` o `SUPERADMIN`.\n\n`password` es opcional: si se omite, el backend genera una contraseña temporal válida y la envía por correo. El usuario creado siempre nace con `mustChangePassword`.\n\nDevuelve el `uuid` público del usuario."
+            "description": "Solo SUPERADMIN y ADMIN.\n\nEl rol se envia por **nombre** (`SUPERADMIN`, `ADMIN`, `USER`); la API no acepta ids de base de datos. Si se omite `roleName`, el alta queda como `USER`, que es el caso habitual.\n\nSolo un SUPERADMIN puede crear cuentas privilegiadas, y de `SUPERADMIN` y `ADMIN` solo puede existir **una cuenta activa de cada uno**: un segundo intento responde 422 hasta que la anterior se de de baja.\n\n`password` es opcional: si se omite, el backend genera una contrasena temporal valida y la envia por correo (siempre en espanol). El usuario creado siempre nace con `mustChangePassword`.\n\nDevuelve el `uuid` publico del usuario."
           }
         },
         {
@@ -214,6 +214,181 @@
               ]
             },
             "description": "Limpia el token en base de datos y expira la cookie."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Usuarios",
+      "description": "Gestion de cuentas del portal. Solo SUPERADMIN y ADMIN.\n\nReglas que aplica el backend: nadie cambia su propio rol ni se da de baja a si mismo, y de SUPERADMIN y ADMIN solo puede existir una cuenta activa de cada uno.",
+      "item": [
+        {
+          "name": "Listado de usuarios",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users?status=active&perPage=15&search=&roleName=USER",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "active"
+                },
+                {
+                  "key": "perPage",
+                  "value": "15"
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "roleName",
+                  "value": "USER",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Paginado. Filtros: `search` (nombre o correo), `roleName`, `status` (`active` por omision, `inactive`, `blocked`, `all`) y `perPage`.\n\nCada fila trae `status`/`statusLabel`, si tiene cambio de contrasena pendiente y el ultimo acceso."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const filas = pm.response.json().data.data;",
+                  "const otro = filas.find((f) => f.roleName === 'USER');",
+                  "if (otro) { pm.collectionVariables.set('userUuid', otro.uuid); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Catalogo de roles",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/roles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "roles"
+              ]
+            },
+            "description": "Los tres roles fijos, con `singleAccount` marcando los que admiten una sola cuenta activa."
+          }
+        },
+        {
+          "name": "Detalle de usuario",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{userUuid}}"
+              ]
+            },
+            "description": "Ficha de una cuenta por su uuid publico."
+          }
+        },
+        {
+          "name": "Editar usuario",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{userUuid}}"
+              ]
+            },
+            "description": "Cambia nombre, correo, rol o estado. Envie solo lo que cambia.\n\nResponde 422 si intenta cambiar su propio rol, darse de baja a si mismo, o asignar un rol privilegiado que ya tiene una cuenta activa.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"fullName\": \"Luis Herrera Ramos\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Dar de baja",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userUuid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{userUuid}}"
+              ]
+            },
+            "description": "Baja logica: la cuenta deja de poder entrar y su sesion abierta se corta de inmediato."
+          }
+        },
+        {
+          "name": "Reactivar",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userUuid}}/restore",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{userUuid}}",
+                "restore"
+              ]
+            },
+            "description": "Reactiva una cuenta dada de baja, revalidando el limite de cuentas privilegiadas."
+          }
+        },
+        {
+          "name": "Restablecer contrasena",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userUuid}}/reset-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{userUuid}}",
+                "reset-password"
+              ]
+            },
+            "description": "Genera una contrasena temporal nueva, marca el cambio obligatorio, invalida la sesion y la envia por correo.\n\nLa contrasena **nunca** viaja en la respuesta. Si el correo no sale responde 502: sin correo esa cuenta quedaria inaccesible."
           }
         }
       ]

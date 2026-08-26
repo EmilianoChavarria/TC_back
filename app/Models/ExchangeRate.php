@@ -10,9 +10,11 @@ use Illuminate\Database\Eloquent\Model;
 /**
  * Tipo de cambio de una fecha aplicable.
  *
- * `calculatedRate` es lo que produjo el proceso diario (publicación × factor) y
- * nunca se sobrescribe con capturas manuales. `manualRate` es la corrección del
- * usuario. El vigente (`effectiveRate`) es el manual cuando existe.
+ * `calculatedRate` es el tipo de cambio del proceso diario: la publicación de
+ * Banxico tal cual, sin operaciones. `factorValue` acompaña al registro como
+ * dato informativo del rango, no se aplica al tipo de cambio. `manualRate` es
+ * la corrección del usuario sobre la publicación y, cuando existe, es el
+ * vigente (`effectiveRate`).
  */
 class ExchangeRate extends Model
 {
