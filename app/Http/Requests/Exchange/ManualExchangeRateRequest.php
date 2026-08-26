@@ -18,7 +18,7 @@ class ManualExchangeRateRequest extends FormRequest
     public function rules(): array
     {
         $rules = [
-            'manualRate' => ['required', 'numeric', 'gt:0', 'max:999999'],
+            'manualRate' => ['required', 'numeric', 'gt:0', 'max:999999', 'decimal:0,4'],
             'reason' => ['required', 'string', 'min:5', 'max:500'],
         ];
 
@@ -36,6 +36,7 @@ class ManualExchangeRateRequest extends FormRequest
             'reason.required' => 'El motivo de la variación es obligatorio',
             'reason.min' => 'Describa el motivo de la variación con al menos 5 caracteres',
             'manualRate.gt' => 'El tipo de cambio debe ser mayor que cero',
+            'manualRate.decimal' => 'El tipo de cambio admite hasta 4 decimales',
         ];
     }
 }

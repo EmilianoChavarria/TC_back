@@ -4,6 +4,7 @@ namespace App\Services\Exchange;
 
 use App\Models\AuditLog;
 use App\Models\ExchangeRate;
+use App\Support\Decimals;
 use Illuminate\Support\Carbon;
 
 /**
@@ -65,10 +66,10 @@ class ExchangeDashboardService
             'publishedRate' => $this->decimal($rate->publishedRate),
             'publishedDate' => $rate->publishedDate?->toDateString(),
             'factorCode' => $rate->factorCode,
-            'factorValue' => $this->decimal($rate->factorValue),
+            'factorValue' => Decimals::factor($rate->factorValue),
             'factorApplied' => $rate->factorValue !== null,
             'source' => $rate->source,
-            'sourceLabel' => $rate->isManual() ? 'Captura manual' : 'Cálculo automático',
+            'sourceLabel' => $rate->isManual() ? 'Captura manual' : 'Publicación Banxico',
             'change' => $this->change($rate, $previous),
         ];
     }
@@ -117,9 +118,11 @@ class ExchangeDashboardService
             'effectiveRate' => $this->decimal($rate->effectiveRate),
             'publishedRate' => $this->decimal($rate->publishedRate),
             'publishedDate' => $rate->publishedDate?->toDateString(),
-            'factorValue' => $this->decimal($rate->factorValue),
+            'factorCode' => $rate->factorCode,
+            'factorValue' => Decimals::factor($rate->factorValue),
+            'factorApplied' => $rate->factorValue !== null,
             'source' => $rate->source,
-            'sourceLabel' => $rate->isManual() ? 'Captura manual' : 'Cálculo automático',
+            'sourceLabel' => $rate->isManual() ? 'Captura manual' : 'Publicación Banxico',
             'calculatedAt' => $rate->updatedAt?->toIso8601String(),
             'isEditable' => true,
         ];
@@ -172,7 +175,7 @@ class ExchangeDashboardService
 
     /**
      * Serie para la gráfica: valor vigente contra la publicación de Banxico.
-     * Incluye el día hábil siguiente cuando ya está calculado.
+     * Incluye el día hábil siguiente cuando ya se sincronizó.
      *
      * @return array<string, mixed>
      */
@@ -206,7 +209,7 @@ class ExchangeDashboardService
             'from' => $from->toDateString(),
             'to' => $to->toDateString(),
             'series' => [
-                'effectiveRate' => 'Tipo de cambio calculado',
+                'effectiveRate' => 'Tipo de cambio vigente',
                 'publishedRate' => 'Publicación Banxico',
             ],
             'points' => $points,
@@ -217,7 +220,7 @@ class ExchangeDashboardService
 
     private function decimal(mixed $value): ?string
     {
-        return $value === null ? null : number_format((float) $value, (int) config('exchange.scale', 4), '.', '');
+        return Decimals::rate($value);
     }
 
     /** «miércoles 19 de agosto de 2026» */

@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use App\Services\Exchange\ExchangeRateService;
+use App\Support\Decimals;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Carbon;
@@ -24,18 +25,18 @@ class ExchangeRateResource extends JsonResource
             'applicableDate' => $this->applicableDate?->toDateString(),
             'dayTag' => $this->dayTag(),
 
-            // Publicación de Banxico que originó el cálculo.
-            'publishedRate' => $this->publishedRate !== null ? (string) $this->publishedRate : null,
+            // Publicación de Banxico: el tipo de cambio automático.
+            'publishedRate' => Decimals::rate($this->publishedRate),
             'publishedDate' => $this->publishedDate?->toDateString(),
 
-            // Factor aplicado, tal como estaba el día del cálculo.
+            // Factor informativo del rango, tal como estaba ese día.
             'factorCode' => $this->factorCode,
-            'factorValue' => $this->factorValue !== null ? (string) $this->factorValue : null,
+            'factorValue' => Decimals::factor($this->factorValue),
             'factorApplied' => $this->factorValue !== null,
 
-            'calculatedRate' => $this->calculatedRate !== null ? (string) $this->calculatedRate : null,
-            'manualRate' => $this->manualRate !== null ? (string) $this->manualRate : null,
-            'effectiveRate' => $this->effectiveRate !== null ? (string) $this->effectiveRate : null,
+            'calculatedRate' => Decimals::rate($this->calculatedRate),
+            'manualRate' => Decimals::rate($this->manualRate),
+            'effectiveRate' => Decimals::rate($this->effectiveRate),
 
             'source' => $this->source,
             'sourceLabel' => $isManual ? 'Manual prevalece' : 'Automático',
@@ -43,6 +44,7 @@ class ExchangeRateResource extends JsonResource
             'manualReason' => $this->manualReason,
             'manualSetAt' => $this->manualSetAt?->toIso8601String(),
             'lastModifiedBy' => $this->lastModifiedBy(),
+            'lastModifiedAt' => ($this->manualRate !== null ? $this->manualSetAt : $this->updatedAt)?->toIso8601String(),
 
             'isEditable' => !$deleted && app(ExchangeRateService::class)->isEditable($this->resource),
             'isDeleted' => $deleted,

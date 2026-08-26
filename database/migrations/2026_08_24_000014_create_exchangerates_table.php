@@ -7,10 +7,10 @@ use Illuminate\Support\Facades\Schema;
 /**
  * Tipo de cambio por fecha aplicable.
  *
- * El proceso diario guarda la publicación de Banxico, el factor que le
- * correspondió y el valor calculado. La captura manual vive en su propia
- * columna: el valor calculado nunca se pisa, y el vigente es el manual cuando
- * existe.
+ * El proceso diario guarda la publicación de Banxico y el factor informativo
+ * que le correspondió; el tipo de cambio automático es la publicación tal cual.
+ * La captura manual vive en su propia columna: la publicación nunca se pisa, y
+ * el vigente es el manual cuando existe.
  */
 return new class extends Migration
 {
@@ -21,16 +21,17 @@ return new class extends Migration
             $table->uuid('uuid')->unique();
             $table->date('applicableDate')->unique();
 
-            // Publicación de Banxico que originó el cálculo.
+            // Publicación de Banxico: es el tipo de cambio automático.
             $table->decimal('publishedRate', 18, 6)->nullable();
             $table->date('publishedDate')->nullable();
 
-            // Copia del factor aplicado: si el factor cambia después, el
-            // histórico conserva el que se usó ese día.
+            // Copia del factor informativo del rango: si el factor cambia
+            // después, el histórico conserva el que aplicaba ese día.
             $table->unsignedBigInteger('factorId')->nullable();
             $table->unsignedInteger('factorCode')->nullable();
             $table->decimal('factorValue', 12, 6)->nullable();
 
+            // Tipo de cambio del proceso automático (copia de publishedRate).
             $table->decimal('calculatedRate', 18, 6)->nullable();
             $table->decimal('manualRate', 18, 6)->nullable();
             $table->decimal('effectiveRate', 18, 6)->nullable();
