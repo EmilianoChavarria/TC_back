@@ -50,7 +50,6 @@ class SuperAdminSeeder extends Seeder
                 'fullName' => (string) env('SUPERADMIN_NAME', 'Super Administrador'),
                 'passwordHash' => Hash::make($password),
                 'roleId' => $role->id,
-                'preferredLanguage' => 'es',
                 'isActive' => true,
                 'mustChangePassword' => true,
                 'passwordChangedAt' => $now,

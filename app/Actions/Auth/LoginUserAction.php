@@ -108,7 +108,6 @@ class LoginUserAction
                 'fullName' => (string) $user->fullName,
                 'email' => (string) $user->email,
                 'roleName' => $roleName,
-                'preferredLanguage' => (string) $user->preferredLanguage,
                 'mustChangePassword' => (bool) $user->mustChangePassword,
                 'passwordExpired' => $passwordExpired,
                 'passwordExpiresAt' => $this->passwords->expiresAt($user->passwordChangedAt)?->toIso8601String(),

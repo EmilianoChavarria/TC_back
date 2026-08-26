@@ -22,7 +22,6 @@ class User extends Authenticatable
         'email',
         'passwordHash',
         'roleId',
-        'preferredLanguage',
         'isActive',
         'mustChangePassword',
         'passwordChangedAt',

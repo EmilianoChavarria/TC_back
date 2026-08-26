@@ -23,7 +23,6 @@ class UserFactory extends Factory
             'email' => fake()->unique()->safeEmail(),
             'passwordHash' => static::$password ??= Hash::make('Passw0rd!2026'),
             'roleId' => Role::query()->where('roleName', Role::USER)->value('id'),
-            'preferredLanguage' => 'es',
             'isActive' => true,
             'mustChangePassword' => false,
             'passwordChangedAt' => now(),
