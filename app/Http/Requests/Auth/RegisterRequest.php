@@ -15,9 +15,12 @@ class RegisterRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        // El alta habitual es de usuarios: el rol se asume cuando no se envía.
+        $roleName = trim((string) $this->input('roleName'));
+
         $this->merge([
             'email' => mb_strtolower(trim((string) $this->input('email'))),
-            'roleName' => mb_strtoupper(trim((string) $this->input('roleName'))),
+            'roleName' => $roleName === '' ? Role::USER : mb_strtoupper($roleName),
         ]);
     }
 
@@ -30,7 +33,6 @@ class RegisterRequest extends FormRequest
             'password' => ['nullable', 'string', 'max:255'],
             // Los roles son fijos: se recibe el nombre, nunca un id.
             'roleName' => ['required', Rule::in(Role::ALL)],
-            'preferredLanguage' => ['nullable', Rule::in(['es', 'en'])],
         ];
     }
 

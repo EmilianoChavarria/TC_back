@@ -22,6 +22,12 @@ class Role extends Model
     /** Roles que administran la seguridad del sistema. */
     public const SECURITY_ADMINS = [self::SUPERADMIN, self::ADMIN];
 
+    /**
+     * Roles de los que sólo puede existir una cuenta activa.
+     * El resto de la organización son usuarios.
+     */
+    public const SINGLE_ACCOUNT = [self::SUPERADMIN, self::ADMIN];
+
     protected $table = 'roles';
     public $timestamps = false;
 
