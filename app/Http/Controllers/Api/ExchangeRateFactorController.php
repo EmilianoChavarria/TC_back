@@ -9,6 +9,7 @@ use App\Http\Requests\Exchange\UpdateFactorRequest;
 use App\Http\Resources\ExchangeRateFactorResource;
 use App\Models\ExchangeRateFactor;
 use App\Services\Exchange\ExchangeRateFactorService;
+use App\Models\User;
 use App\Support\ApiResponse;
 use Illuminate\Http\Request;
 
@@ -27,6 +28,7 @@ class ExchangeRateFactorController extends Controller
     public function index(Request $request)
     {
         $factors = ExchangeRateFactor::query()
+            ->with('updatedBy')
             ->when(!$request->boolean('includeDeleted'), fn ($query) => $query->active())
             ->orderBy('rangeFrom')
             ->get();
@@ -40,7 +42,7 @@ class ExchangeRateFactorController extends Controller
     /** POST /api/exchange-rates/factors */
     public function store(StoreFactorRequest $request)
     {
-        $factor = $this->factors->create($request->validated());
+        $factor = $this->factors->create($request->validated(), $this->actor($request));
 
         return response()->json(ApiResponse::success(
             'Factor registrado',
@@ -58,14 +60,14 @@ class ExchangeRateFactorController extends Controller
      */
     public function bulkStore(BulkFactorsRequest $request)
     {
-        $saved = $this->factors->bulkSave($request->factors());
+        $saved = $this->factors->bulkSave($request->factors(), $this->actor($request));
 
         return response()->json(ApiResponse::success(
             'Factores guardados',
             [
-                'saved' => ExchangeRateFactorResource::collection($saved),
+                'saved' => ExchangeRateFactorResource::collection($saved->load('updatedBy')),
                 'factors' => ExchangeRateFactorResource::collection(
-                    ExchangeRateFactor::query()->active()->orderBy('rangeFrom')->get()
+                    ExchangeRateFactor::query()->with('updatedBy')->active()->orderBy('rangeFrom')->get()
                 ),
             ],
             201
@@ -83,12 +85,14 @@ class ExchangeRateFactorController extends Controller
 
         return response()->json(ApiResponse::success(
             'Factor actualizado',
-            ExchangeRateFactorResource::make($this->factors->update($factor, $request->validated()))
+            ExchangeRateFactorResource::make(
+                $this->factors->update($factor, $request->validated(), $this->actor($request))->load('updatedBy'),
+            )
         ));
     }
 
     /** DELETE /api/exchange-rates/factors/{uuid} — baja lógica */
-    public function destroy(string $uuid)
+    public function destroy(Request $request, string $uuid)
     {
         $factor = $this->find($uuid);
 
@@ -98,12 +102,12 @@ class ExchangeRateFactorController extends Controller
 
         return response()->json(ApiResponse::success(
             'Factor eliminado',
-            ExchangeRateFactorResource::make($this->factors->delete($factor))
+            ExchangeRateFactorResource::make($this->factors->delete($factor, $this->actor($request))->load('updatedBy'))
         ));
     }
 
     /** POST /api/exchange-rates/factors/{uuid}/restore */
-    public function restore(string $uuid)
+    public function restore(Request $request, string $uuid)
     {
         $factor = $this->find($uuid);
 
@@ -113,12 +117,19 @@ class ExchangeRateFactorController extends Controller
 
         return response()->json(ApiResponse::success(
             'Factor restaurado',
-            ExchangeRateFactorResource::make($this->factors->restore($factor))
+            ExchangeRateFactorResource::make($this->factors->restore($factor, $this->actor($request))->load('updatedBy'))
         ));
     }
 
     private function find(string $uuid): ?ExchangeRateFactor
     {
-        return ExchangeRateFactor::query()->whereUuid($uuid)->first();
+        return ExchangeRateFactor::query()->with('updatedBy')->whereUuid($uuid)->first();
+    }
+
+    private function actor(Request $request): ?User
+    {
+        $actor = $request->attributes->get('authUser');
+
+        return $actor instanceof User ? $actor : null;
     }
 }

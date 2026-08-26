@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Support\Decimals;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -17,9 +18,10 @@ class ExchangeRateFactorResource extends JsonResource
         return [
             'uuid' => (string) $this->uuid,
             'code' => (int) $this->code,
-            'rangeFrom' => (string) $this->rangeFrom,
-            'rangeTo' => (string) $this->rangeTo,
-            'factor' => (string) $this->factor,
+            'rangeFrom' => Decimals::rate($this->rangeFrom),
+            'rangeTo' => Decimals::rate($this->rangeTo),
+            'factor' => Decimals::factor($this->factor),
+            'updatedBy' => $this->updatedBy?->fullName,
             'isDeleted' => $deleted,
             'status' => $deleted ? 'deleted' : 'active',
             'statusLabel' => $deleted ? 'Eliminado' : 'Vigente',

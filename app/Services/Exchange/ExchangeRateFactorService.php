@@ -3,6 +3,8 @@
 namespace App\Services\Exchange;
 
 use App\Models\ExchangeRateFactor;
+use App\Models\User;
+use App\Support\Decimals;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -19,7 +21,7 @@ class ExchangeRateFactorService
         return ExchangeRateFactor::query()->containing($rate)->orderBy('rangeFrom')->first();
     }
 
-    public function create(array $data): ExchangeRateFactor
+    public function create(array $data, ?User $actor = null): ExchangeRateFactor
     {
         $this->assertValidRange($data['rangeFrom'], $data['rangeTo']);
         $this->assertNoOverlap($data['rangeFrom'], $data['rangeTo']);
@@ -28,15 +30,16 @@ class ExchangeRateFactorService
 
         return ExchangeRateFactor::create([
             'code' => $this->nextCode(),
-            'rangeFrom' => $data['rangeFrom'],
-            'rangeTo' => $data['rangeTo'],
-            'factor' => $data['factor'],
+            'rangeFrom' => Decimals::roundRate($data['rangeFrom']),
+            'rangeTo' => Decimals::roundRate($data['rangeTo']),
+            'factor' => Decimals::roundFactor($data['factor']),
+            'updatedByUserId' => $actor?->id,
             'createdAt' => $now,
             'updatedAt' => $now,
         ]);
     }
 
-    public function update(ExchangeRateFactor $factor, array $data): ExchangeRateFactor
+    public function update(ExchangeRateFactor $factor, array $data, ?User $actor = null): ExchangeRateFactor
     {
         $rangeFrom = $data['rangeFrom'] ?? $factor->rangeFrom;
         $rangeTo = $data['rangeTo'] ?? $factor->rangeTo;
@@ -45,9 +48,10 @@ class ExchangeRateFactorService
         $this->assertNoOverlap($rangeFrom, $rangeTo, $factor->id);
 
         $factor->fill([
-            'rangeFrom' => $rangeFrom,
-            'rangeTo' => $rangeTo,
-            'factor' => $data['factor'] ?? $factor->factor,
+            'rangeFrom' => Decimals::roundRate($rangeFrom),
+            'rangeTo' => Decimals::roundRate($rangeTo),
+            'factor' => Decimals::roundFactor($data['factor'] ?? $factor->factor),
+            'updatedByUserId' => $actor?->id ?? $factor->updatedByUserId,
             'updatedAt' => Carbon::now(),
         ])->save();
 
@@ -55,7 +59,7 @@ class ExchangeRateFactorService
     }
 
     /** Baja lógica: el factor deja de aplicar pero el historial lo conserva. */
-    public function delete(ExchangeRateFactor $factor): ExchangeRateFactor
+    public function delete(ExchangeRateFactor $factor, ?User $actor = null): ExchangeRateFactor
     {
         if ($factor->isDeleted()) {
             return $factor;
@@ -63,13 +67,14 @@ class ExchangeRateFactorService
 
         $factor->fill([
             'deletedAt' => Carbon::now(),
+            'updatedByUserId' => $actor?->id ?? $factor->updatedByUserId,
             'updatedAt' => Carbon::now(),
         ])->save();
 
         return $factor;
     }
 
-    public function restore(ExchangeRateFactor $factor): ExchangeRateFactor
+    public function restore(ExchangeRateFactor $factor, ?User $actor = null): ExchangeRateFactor
     {
         if (!$factor->isDeleted()) {
             return $factor;
@@ -79,6 +84,7 @@ class ExchangeRateFactorService
 
         $factor->fill([
             'deletedAt' => null,
+            'updatedByUserId' => $actor?->id ?? $factor->updatedByUserId,
             'updatedAt' => Carbon::now(),
         ])->save();
 
@@ -97,7 +103,7 @@ class ExchangeRateFactorService
      *
      * @param array<int, array<string, mixed>> $items
      */
-    public function bulkSave(array $items): Collection
+    public function bulkSave(array $items, ?User $actor = null): Collection
     {
         $existing = ExchangeRateFactor::query()->active()->get()->keyBy('uuid');
         $touched = [];
@@ -140,7 +146,7 @@ class ExchangeRateFactorService
 
         $this->assertBatchWithoutOverlap($projected);
 
-        return DB::transaction(function () use ($items, $existing) {
+        return DB::transaction(function () use ($items, $existing, $actor) {
             $now = Carbon::now();
             $saved = new Collection();
 
@@ -150,17 +156,19 @@ class ExchangeRateFactorService
                 if ($uuid !== null) {
                     $factor = $existing->get($uuid);
                     $factor->fill([
-                        'rangeFrom' => $item['rangeFrom'],
-                        'rangeTo' => $item['rangeTo'],
-                        'factor' => $item['factor'],
+                        'rangeFrom' => Decimals::roundRate($item['rangeFrom']),
+                        'rangeTo' => Decimals::roundRate($item['rangeTo']),
+                        'factor' => Decimals::roundFactor($item['factor']),
+                        'updatedByUserId' => $actor?->id ?? $factor->updatedByUserId,
                         'updatedAt' => $now,
                     ])->save();
                 } else {
                     $factor = ExchangeRateFactor::create([
                         'code' => $this->nextCode(),
-                        'rangeFrom' => $item['rangeFrom'],
-                        'rangeTo' => $item['rangeTo'],
-                        'factor' => $item['factor'],
+                        'rangeFrom' => Decimals::roundRate($item['rangeFrom']),
+                        'rangeTo' => Decimals::roundRate($item['rangeTo']),
+                        'factor' => Decimals::roundFactor($item['factor']),
+                        'updatedByUserId' => $actor?->id,
                         'createdAt' => $now,
                         'updatedAt' => $now,
                     ]);
@@ -247,8 +255,8 @@ class ExchangeRateFactorService
                 'rangeFrom' => [sprintf(
                     'El rango se traslapa con la clave %d (%s a %s)',
                     $overlap->code,
-                    $overlap->rangeFrom,
-                    $overlap->rangeTo
+                    Decimals::rate($overlap->rangeFrom),
+                    Decimals::rate($overlap->rangeTo)
                 )],
             ]);
         }

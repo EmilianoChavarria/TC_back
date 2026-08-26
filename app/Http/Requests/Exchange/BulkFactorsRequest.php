@@ -35,9 +35,9 @@ class BulkFactorsRequest extends FormRequest
         return [
             'factors' => ['required', 'array', 'min:1', 'max:200'],
             'factors.*.uuid' => ['nullable', 'uuid'],
-            'factors.*.rangeFrom' => ['required', 'numeric', 'min:0', 'max:999999'],
-            'factors.*.rangeTo' => ['required', 'numeric', 'gt:factors.*.rangeFrom', 'max:999999'],
-            'factors.*.factor' => ['required', 'numeric', 'gt:0', 'max:999'],
+            'factors.*.rangeFrom' => ['required', 'numeric', 'min:0', 'max:999999', 'decimal:0,4'],
+            'factors.*.rangeTo' => ['required', 'numeric', 'gt:factors.*.rangeFrom', 'max:999999', 'decimal:0,4'],
+            'factors.*.factor' => ['required', 'numeric', 'gt:0', 'max:999', 'decimal:0,3'],
         ];
     }
 
@@ -47,6 +47,7 @@ class BulkFactorsRequest extends FormRequest
             'factors.required' => 'Envíe al menos un factor',
             'factors.*.rangeTo.gt' => 'El límite superior debe ser mayor que el inferior',
             'factors.*.factor.gt' => 'El factor debe ser mayor que cero',
+            'factors.*.factor.decimal' => 'El factor admite hasta 3 decimales',
         ];
     }
 
