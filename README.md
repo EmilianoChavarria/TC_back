@@ -39,7 +39,8 @@ Los roles **no son dinámicos**: `SUPERADMIN`, `ADMIN` y `USER` (constantes en
 |---|---|---|---|
 | Administra seguridad y configuración | Sí | Sí | No |
 | Alta de usuarios | Sí | Sí | No |
-| Puede crear SUPERADMIN o ADMIN | Sí | No | No |
+| Puede crear la cuenta ADMIN | Sí | No | No |
+| Cuentas activas permitidas | 1 | 1 | Sin límite |
 | Su cuenta se bloquea por intentos fallidos | **No** | **No** | Sí |
 | Su IP se bloquea por intentos fallidos | Sí | Sí | Sí |
 
@@ -101,14 +102,17 @@ cambiarla antes de usar el resto de la API.
 ## Tipo de cambio
 
 Banxico publica el FIX (serie `SF43718`) cada dia habil y esa publicacion aplica
-al **dia habil siguiente**. El proceso diario `exchange-rate:sync` la consulta,
-busca el factor vigente cuyo rango la contiene -`[desde, hasta)`, inferior
-inclusivo y superior exclusivo- y guarda `publicacion x factor` como valor
-calculado de la fecha aplicable.
+al **dia habil siguiente**. El proceso diario `exchange-rate:sync` la consulta y
+la guarda tal cual como tipo de cambio de la fecha aplicable. Ademas busca el
+factor vigente cuyo rango la contiene -`[desde, hasta)`, inferior inclusivo y
+superior exclusivo- y lo guarda junto al registro **solo como dato informativo**:
+al tipo de cambio no se le aplica ninguna operacion.
 
-El valor calculado nunca se sobrescribe. La correccion manual se guarda aparte,
-exige motivo y prevalece como valor vigente, incluso si el calculo automatico
-llega despues. Solo se puede capturar el dia en curso y el dia habil siguiente.
+La publicacion nunca se sobrescribe. La correccion manual se hace sobre el tipo
+de cambio de Banxico, se guarda aparte, exige motivo y prevalece como valor
+vigente, incluso si la sincronizacion automatica llega despues. Solo se puede
+capturar el dia en curso y el dia habil siguiente. `exchange-rate:reset-manual`
+limpia las capturas manuales y devuelve el vigente a la publicacion de Banxico.
 
 Requiere `BANXICO_TOKEN` y un cron que ejecute `php artisan schedule:run` cada
 minuto; la programacion esta en `routes/console.php`.
@@ -147,6 +151,9 @@ como `[REDACTADO]`; los ids internos no se guardan. Ver `config/audit.php` y
 `AppServiceProvider` sobre `symfony/sendgrid-mailer`). Con `MAIL_MAILER=log` el
 correo se escribe en `storage/logs`.
 
+Todo el correo del portal va en español; no hay preferencia de idioma por
+usuario.
+
 Todo el correo sale por `EmailSenderService`, que respeta el modo guardado en
 `emailconfig`:
 
@@ -167,6 +174,13 @@ Todo el correo sale por `EmailSenderService`, que respeta el modo guardado en
 | POST | `/api/auth/logout` | Sesión |
 | POST | `/api/auth/change-password` | Sesión |
 | POST | `/api/auth/register` | SUPERADMIN, ADMIN |
+| GET | `/api/users` | SUPERADMIN, ADMIN |
+| GET | `/api/users/roles` | SUPERADMIN, ADMIN |
+| GET | `/api/users/{uuid}` | SUPERADMIN, ADMIN |
+| PUT | `/api/users/{uuid}` | SUPERADMIN, ADMIN |
+| DELETE | `/api/users/{uuid}` | SUPERADMIN, ADMIN |
+| POST | `/api/users/{uuid}/restore` | SUPERADMIN, ADMIN |
+| POST | `/api/users/{uuid}/reset-password` | SUPERADMIN, ADMIN |
 | POST | `/api/password-requirements/validate` | Público (60 req/min) |
 | GET | `/api/password-requirements` | Sesión |
 | PUT | `/api/password-requirements` | SUPERADMIN, ADMIN |
@@ -217,8 +231,9 @@ Todas las respuestas comparten la forma de `App\Support\ApiResponse`:
 
 - Las peticiones deben ir con `credentials: 'include'`.
 - `POST /api/auth/register` recibe el rol por `roleName` (`SUPERADMIN`, `ADMIN`,
-  `USER`), no por id, y acepta `password` opcional: si se omite, el backend
-  genera una contraseña temporal válida y la envía por correo. Sólo un
-  SUPERADMIN puede crear cuentas `ADMIN` o `SUPERADMIN`.
+  `USER`), no por id, y lo asume como `USER` cuando se omite. `password` es
+  opcional: si no se envía, el backend genera una contraseña temporal válida y la
+  manda por correo. Sólo un SUPERADMIN puede crear cuentas privilegiadas, y de
+  `SUPERADMIN` y `ADMIN` sólo puede existir una cuenta activa de cada uno.
 - El campo `sessionTimeoutMinutes` de login/verify sirve para programar el aviso
   de cierre por inactividad en la interfaz.
