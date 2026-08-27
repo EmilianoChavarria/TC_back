@@ -246,6 +246,26 @@ programación puede invocarlo todos los días sin condiciones. Cada envío queda
 como evento `holidayReminder.sent` en la línea de tiempo, con autor
 «Proceso automático».
 
+### Consulta pública
+
+`GET /api/public/exchange-rate?days=30` es la **única ruta sin autenticación**
+del sistema (aparte de `health`). La sirve `PublicExchangeRateService`, que es
+donde vive la regla de qué se publica: fecha, valor vigente, factor informativo,
+variación contra el día hábil anterior, máximo y mínimo del periodo, la serie y
+el historial. Nada más.
+
+**Lo que jamás sale**: `uuid`, `source`, `manualRate`, `manualReason`, autor,
+`publishedRate`/`publishedDate`, `factorCode`, `carriedFromDate`, marcas de
+notificación ni el estado del proceso. La vista pública no debe delatar que
+existe un portal detrás, así que un campo nuevo aquí no se juzga por si sirve,
+sino por lo que le cuenta a quien no debería saber nada de nosotros.
+`PublicExchangeRateTest` bloquea la lista completa de campos prohibidos.
+
+Va con `throttle:60,1` por ser la única puerta abierta a internet. Al no ser una
+escritura, no entra a `requestlogs` (la auditoría sólo registra POST/PUT/PATCH/
+DELETE). En fin de semana o feriado responde el último valor disponible: una
+consulta pública no puede quedarse muda.
+
 ### Factores
 
 Los rangos vigentes **no pueden traslaparse**; se valida en
@@ -348,7 +368,8 @@ app/
                        ExchangeRateService, ExchangeRateFactorService
   Support/             ApiResponse, AuthCookie
 routes/api/            auth.php, users.php, security.php, emailConfig.php,
-                       exchangeRates.php, holidays.php, audit.php, dashboard.php
+                       exchangeRates.php, holidays.php, audit.php, dashboard.php,
+                       publicExchangeRate.php (sin autenticación)
 routes/console.php     Programación diaria (requiere cron con schedule:run)
 docs/                  Colección y environment de Postman
 ```
