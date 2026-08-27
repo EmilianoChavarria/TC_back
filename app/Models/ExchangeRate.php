@@ -56,6 +56,8 @@ class ExchangeRate extends Model
         'calculatedRate' => 'decimal:6',
         'manualRate' => 'decimal:6',
         'effectiveRate' => 'decimal:6',
+        'notifiedRate' => 'decimal:6',
+        'notifiedAt' => 'datetime',
         'manualSetAt' => 'datetime',
         'createdAt' => 'datetime',
         'updatedAt' => 'datetime',
