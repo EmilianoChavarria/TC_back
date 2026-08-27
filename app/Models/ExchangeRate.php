@@ -23,6 +23,12 @@ class ExchangeRate extends Model
     public const SOURCE_AUTOMATIC = 'automatic';
     public const SOURCE_MANUAL = 'manual';
 
+    /**
+     * Día feriado: no hay publicación aplicable y el vigente es el del día
+     * hábil anterior, cuya fecha queda en `carriedFromDate`.
+     */
+    public const SOURCE_CARRIED = 'carried';
+
     const CREATED_AT = 'createdAt';
     const UPDATED_AT = 'updatedAt';
 
@@ -34,6 +40,7 @@ class ExchangeRate extends Model
         'applicableDate',
         'publishedRate',
         'publishedDate',
+        'carriedFromDate',
         'factorId',
         'factorCode',
         'factorValue',
@@ -50,6 +57,7 @@ class ExchangeRate extends Model
     protected $casts = [
         'applicableDate' => 'date',
         'publishedDate' => 'date',
+        'carriedFromDate' => 'date',
         'publishedRate' => 'decimal:6',
         'factorCode' => 'integer',
         'factorValue' => 'decimal:6',
@@ -82,6 +90,11 @@ class ExchangeRate extends Model
     public function isManual(): bool
     {
         return $this->manualRate !== null;
+    }
+
+    public function isCarried(): bool
+    {
+        return $this->source === self::SOURCE_CARRIED;
     }
 
     public function auditLabel(): ?string

@@ -69,9 +69,28 @@ class ExchangeDashboardService
             'factorValue' => Decimals::factor($rate->factorValue),
             'factorApplied' => $rate->factorValue !== null,
             'source' => $rate->source,
-            'sourceLabel' => $rate->isManual() ? 'Captura manual' : 'Publicación Banxico',
+            'sourceLabel' => $this->sourceLabel($rate),
             'change' => $this->change($rate, $previous),
         ];
+    }
+
+    /**
+     * De dónde sale el valor de la tarjeta.
+     *
+     * El feriado se distingue a propósito: es el mismo número que el día
+     * anterior, y sin decirlo se lee como que el proceso no corrió.
+     */
+    private function sourceLabel(ExchangeRate $rate): string
+    {
+        if ($rate->isManual()) {
+            return 'Captura manual';
+        }
+
+        if ($rate->isCarried()) {
+            return 'Feriado · TC del '.($rate->carriedFromDate?->format('d/m/Y') ?? 'día hábil anterior');
+        }
+
+        return 'Publicación Banxico';
     }
 
     /** Variación contra el registro vigente anterior. */
@@ -122,7 +141,7 @@ class ExchangeDashboardService
             'factorValue' => Decimals::factor($rate->factorValue),
             'factorApplied' => $rate->factorValue !== null,
             'source' => $rate->source,
-            'sourceLabel' => $rate->isManual() ? 'Captura manual' : 'Publicación Banxico',
+            'sourceLabel' => $this->sourceLabel($rate),
             'calculatedAt' => $rate->updatedAt?->toIso8601String(),
             'isEditable' => true,
         ];

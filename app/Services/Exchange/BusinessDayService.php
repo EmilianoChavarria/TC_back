@@ -45,6 +45,41 @@ class BusinessDayService
         return $previous->startOfDay();
     }
 
+    /**
+     * Día feriado capturado en el módulo correspondiente.
+     *
+     * No es lo contrario de `isBusinessDay`: un sábado tampoco es hábil, pero
+     * no es feriado. La distinción importa para el arrastre del tipo de cambio,
+     * que sólo aplica a los feriados de entre semana.
+     */
+    public function isHoliday(Carbon $date): bool
+    {
+        return in_array($date->toDateString(), $this->holidayDates(), true);
+    }
+
+    /**
+     * Días feriados de entre semana dentro del rango, de la fecha más antigua
+     * a la más reciente.
+     *
+     * @return array<int, Carbon>
+     */
+    public function holidaysBetween(Carbon $from, Carbon $to): array
+    {
+        $cursor = $from->copy()->startOfDay();
+        $end = $to->copy()->startOfDay();
+        $holidays = [];
+
+        while ($cursor->lessThanOrEqualTo($end)) {
+            if (!$cursor->isWeekend() && $this->isHoliday($cursor)) {
+                $holidays[] = $cursor->copy();
+            }
+
+            $cursor->addDay();
+        }
+
+        return $holidays;
+    }
+
     /** El propio día si es hábil; si no, el siguiente hábil. */
     public function currentOrNextBusinessDay(Carbon $date): Carbon
     {

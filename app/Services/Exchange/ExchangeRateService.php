@@ -22,6 +22,10 @@ use Illuminate\Validation\ValidationException;
  *
  * La captura manual nunca pisa la publicación: se guarda aparte y prevalece
  * como vigente, incluso si la sincronización automática llega después.
+ *
+ * En los días feriados capturados en su módulo no hay publicación aplicable:
+ * el vigente es el del día hábil anterior, que la sincronización arrastra a
+ * esa fecha (`SOURCE_CARRIED`).
  */
 class ExchangeRateService
 {
@@ -30,6 +34,7 @@ class ExchangeRateService
     public const EVENT_SYNC_FAILED = 'exchangeRate.syncFailed';
     public const EVENT_MANUAL_OVERRIDE = 'exchangeRate.manualOverride';
     public const EVENT_MANUAL_RESET = 'exchangeRate.manualReset';
+    public const EVENT_HOLIDAY_CARRY = 'exchangeRate.holidayCarryOver';
 
     public function __construct(
         private readonly BanxicoFixService $banxico,
@@ -43,7 +48,7 @@ class ExchangeRateService
     /**
      * Trae las publicaciones recientes y actualiza las fechas aplicables.
      *
-     * @return array{processed: int, dates: array<int, string>}
+     * @return array{processed: int, dates: array<int, string>, carried: array<int, array{date: string, from: string}>}
      */
     public function sync(?Carbon $referenceDate = null, ?int $lookbackDays = null): array
     {
@@ -66,6 +71,15 @@ class ExchangeRateService
             $this->notifier->notify($rate);
         }
 
+        // Los feriados no tienen publicación aplicable: se les arrastra el
+        // tipo de cambio del día hábil anterior. Se hace DESPUÉS de aplicar
+        // las publicaciones para que el valor arrastrado sea el ya vigente y
+        // no el que había antes de esta corrida.
+        $carried = $this->carryOverHolidays(
+            $referenceDate->copy()->subDays(max(1, $lookbackDays)),
+            $this->businessDays->nextBusinessDay($referenceDate)
+        );
+
         // Deja constancia de la corrida: es lo que alimenta el estado del
         // proceso automático en el tablero.
         $this->audit->event(
@@ -73,10 +87,145 @@ class ExchangeRateService
             'exchangerates',
             null,
             'Sincronización con Banxico',
-            ['processed' => count($dates), 'dates' => $dates],
+            ['processed' => count($dates), 'dates' => $dates, 'carried' => $carried],
         );
 
-        return ['processed' => count($dates), 'dates' => $dates];
+        return ['processed' => count($dates), 'dates' => $dates, 'carried' => $carried];
+    }
+
+    /**
+     * Arrastra el tipo de cambio a los días feriados del rango.
+     *
+     * En un día feriado nadie opera, pero el portal se sigue consultando y la
+     * vista pública tiene que responder algo: sin esto, la fecha simplemente no
+     * existe y el tipo de cambio del día aparece vacío.
+     *
+     * El rango llega hasta el siguiente día hábil para cubrir el feriado que
+     * viene ANTES de que llegue: al cerrar el día previo ya queda el registro,
+     * y no depende de que la sincronización corra durante el propio feriado.
+     *
+     * ⚠️ Nunca pisa un registro existente. Si alguien capturó el valor a mano
+     * para esa fecha, esa captura manda; y una fecha ya arrastrada no se vuelve
+     * a tocar aunque la corrida se repita.
+     *
+     * @return array<int, array{date: string, from: string}>
+     */
+    public function carryOverHolidays(Carbon $from, Carbon $to): array
+    {
+        if (!config('exchange.holiday_carry_over', true)) {
+            return [];
+        }
+
+        $carried = [];
+
+        foreach ($this->businessDays->holidaysBetween($from, $to) as $holiday) {
+            $rate = $this->carryOverHoliday($holiday);
+
+            if ($rate) {
+                $carried[] = [
+                    'date' => $rate->applicableDate->toDateString(),
+                    'from' => $rate->carriedFromDate?->toDateString(),
+                ];
+            }
+        }
+
+        return $carried;
+    }
+
+    /** Devuelve el registro creado, o null si no procedía crearlo. */
+    private function carryOverHoliday(Carbon $holiday): ?ExchangeRate
+    {
+        $date = $holiday->copy()->startOfDay();
+
+        // Sin `active()` a propósito: la fecha es única en la tabla, así que un
+        // registro eliminado también cuenta. Reactivarlo es una decisión del
+        // usuario, no del proceso.
+        $existing = ExchangeRate::query()
+            ->whereDate('applicableDate', $date->toDateString())
+            ->first();
+
+        if ($existing && !$this->shouldReplaceWithCarryOver($existing)) {
+            return null;
+        }
+
+        $previous = ExchangeRate::query()
+            ->active()
+            ->whereNotNull('effectiveRate')
+            ->where('applicableDate', '<', $date->toDateString())
+            ->orderByDesc('applicableDate')
+            ->first();
+
+        if (!$previous) {
+            // Pasa en la puesta en marcha, con el histórico todavía vacío. No
+            // es un error: no hay nada que arrastrar.
+            Log::warning('[ExchangeRate] feriado sin tipo de cambio anterior que arrastrar', [
+                'applicableDate' => $date->toDateString(),
+            ]);
+
+            return null;
+        }
+
+        $now = Carbon::now();
+
+        // Se copian la publicación y el factor del día de origen: el registro
+        // tiene que poder explicarse solo cuando se ve en el histórico.
+        $attributes = [
+            'publishedRate' => $previous->publishedRate,
+            'publishedDate' => $previous->publishedDate?->toDateString(),
+            'carriedFromDate' => $previous->applicableDate->toDateString(),
+            'factorId' => $previous->factorId,
+            'factorCode' => $previous->factorCode,
+            'factorValue' => $previous->factorValue,
+            'calculatedRate' => $previous->effectiveRate,
+            'effectiveRate' => $previous->effectiveRate,
+            'source' => ExchangeRate::SOURCE_CARRIED,
+            'updatedAt' => $now,
+        ];
+
+        if ($existing) {
+            // El feriado ya arrastrado se reevalúa: si se preparó por la mañana
+            // con el valor del viernes y por la tarde llegó la publicación del
+            // lunes, el feriado tiene que conservar la del lunes.
+            $unchanged = $existing->isCarried()
+                && $existing->carriedFromDate?->toDateString() === $previous->applicableDate->toDateString()
+                && bccomp((string) $existing->effectiveRate, (string) $previous->effectiveRate, 6) === 0;
+
+            if ($unchanged) {
+                return null;
+            }
+
+            Log::info('[ExchangeRate] feriado: se arrastra el TC del día hábil anterior', [
+                'applicableDate' => $date->toDateString(),
+                'carriedFrom' => $previous->applicableDate->toDateString(),
+                'previousSource' => $existing->source,
+            ]);
+
+            $existing->fill($attributes)->save();
+
+            return $existing;
+        }
+
+        return ExchangeRate::create($attributes + [
+            'applicableDate' => $date->toDateString(),
+            'createdAt' => $now,
+        ]);
+    }
+
+    /**
+     * Una fecha que YA tenía tipo de cambio y después se marcó como feriado.
+     *
+     * Sólo se reemplaza de hoy en adelante: el histórico es lo que
+     * efectivamente se usó para operar ese día y no se reescribe, y una captura
+     * manual manda siempre —quien la hizo sabía que era feriado—. También entra
+     * aquí el feriado ya arrastrado, para reevaluar de qué día toma el valor.
+     */
+    private function shouldReplaceWithCarryOver(ExchangeRate $rate): bool
+    {
+        if ($rate->manualRate !== null || $rate->deletedAt !== null) {
+            return false;
+        }
+
+        return $rate->applicableDate->gte(Carbon::today());
     }
 
     /**
@@ -107,6 +256,9 @@ class ExchangeRateService
         $attributes = [
             'publishedRate' => Decimals::roundRate($publishedRate),
             'publishedDate' => $publishedDate->toDateString(),
+            // Llegó publicación para esta fecha: ya no es un valor arrastrado,
+            // aunque lo haya sido mientras el día figuraba como feriado.
+            'carriedFromDate' => null,
             'factorId' => $factor?->id,
             'factorCode' => $factor?->code,
             'factorValue' => $factor?->factor,
@@ -234,6 +386,13 @@ class ExchangeRateService
         $rates = ExchangeRate::query()->orderBy('applicableDate')->get();
 
         foreach ($rates as $rate) {
+            // El arrastre de un feriado copia la publicación del día de origen;
+            // normalizarlo contra ella lo convertiría en un automático que
+            // aparenta una publicación propia que nunca existió.
+            if ($rate->isCarried()) {
+                continue;
+            }
+
             $isManual = $rate->manualRate !== null;
 
             // Sin publicación no hay tipo de cambio al cual regresar.
