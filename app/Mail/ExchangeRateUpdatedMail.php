@@ -5,6 +5,7 @@ namespace App\Mail;
 use App\Mail\Concerns\HasOverrideNotice;
 use App\Models\EmailConfig;
 use App\Models\ExchangeRate;
+use App\Support\Decimals;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Queue\SerializesModels;
@@ -35,8 +36,8 @@ class ExchangeRateUpdatedMail extends Mailable
         $this->portalUrl = (string) config('security.frontend_url');
 
         $this->applicableDate = $rate->applicableDate->translatedFormat('l j \d\e F \d\e Y');
-        $this->effectiveRate = (string) $rate->effectiveRate;
-        $this->factorValue = $rate->factorValue !== null ? (string) $rate->factorValue : null;
+        $this->effectiveRate = (string) Decimals::rate($rate->effectiveRate);
+        $this->factorValue = Decimals::factor($rate->factorValue);
         $this->factorCode = $rate->factorCode;
         $this->isManual = $rate->source === ExchangeRate::SOURCE_MANUAL;
         $this->manualReason = $rate->manualReason;
