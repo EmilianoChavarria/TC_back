@@ -58,6 +58,91 @@
         </p>
     @endif
 
+    {{-- Comparativo de tres fechas: da referencia de hacia dónde se movió el
+         valor sin tener que entrar al portal. --}}
+    @php
+        // Los clientes de correo ignoran las hojas de estilo, así que el estilo
+        // de cada celda se arma aquí y no se repite fila por fila.
+        $th = 'padding:10px 14px; background-color:#f9fafb; border-bottom:1px solid #e5e7eb; color:#6b7280; font-size:12px; text-transform:uppercase; letter-spacing:0.4px;';
+        $td = fn (bool $last, bool $highlight) => 'padding:12px 14px;'
+            .($last ? '' : ' border-bottom:1px solid #f3f4f6;')
+            .($highlight ? ' background-color:#eff6ff;' : '');
+    @endphp
+
+    <p style="margin:0 0 12px; color:#111827; font-size:15px; font-weight:600;">
+        {{ __('emails.exchange_rate_comparison_title') }}
+    </p>
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 28px; border:1px solid #e5e7eb; border-radius:8px; border-collapse:separate; border-spacing:0;">
+        <tr>
+            <td style="{{ $th }}">{{ __('emails.exchange_rate_comparison_col_period') }}</td>
+            <td style="{{ $th }}">{{ __('emails.exchange_rate_comparison_col_date') }}</td>
+            <td align="right" style="{{ $th }}">{{ __('emails.exchange_rate_comparison_col_rate') }}</td>
+            <td align="right" style="{{ $th }}">{{ __('emails.exchange_rate_comparison_col_factor') }}</td>
+        </tr>
+
+        @foreach ($comparison as $row)
+            @php $cell = $td($loop->last, $row['highlight']); @endphp
+            <tr>
+                <td style="{{ $cell }} color:#111827; font-size:14px; font-weight:{{ $row['highlight'] ? '600' : '400' }};">
+                    {{ $row['label'] }}
+                    @if ($row['note'])
+                        <br><span style="color:#9ca3af; font-size:12px; font-weight:400;">{{ $row['note'] }}</span>
+                    @endif
+                </td>
+                <td style="{{ $cell }} color:#6b7280; font-size:14px;">{{ $row['date'] }}</td>
+                <td align="right" style="{{ $cell }} color:{{ $row['rate'] ? '#111827' : '#9ca3af' }}; font-size:15px; font-weight:{{ $row['highlight'] ? '700' : '600' }};">
+                    {{ $row['rate'] ?? __('emails.exchange_rate_row_empty') }}
+                </td>
+                <td align="right" style="{{ $cell }} color:#6b7280; font-size:14px;">
+                    @if ($row['factorValue'])
+                        {{ $row['factorValue'] }}
+                        @if ($row['factorCode'] !== null)
+                            <br><span style="color:#9ca3af; font-size:12px;">{{ __('emails.exchange_rate_factor_code', ['code' => $row['factorCode']]) }}</span>
+                        @endif
+                    @else
+                        <span style="color:#9ca3af;">&mdash;</span>
+                    @endif
+                </td>
+            </tr>
+        @endforeach
+    </table>
+
+    {{-- Catálogo completo de factores: el correo se usa como referencia de
+         escritorio y así no hay que entrar al portal sólo a consultar un rango. --}}
+    <p style="margin:0 0 12px; color:#111827; font-size:15px; font-weight:600;">
+        {{ __('emails.exchange_rate_factors_title') }}
+    </p>
+
+    @if (empty($factors))
+        <p style="margin:0 0 28px; color:#9ca3af; font-size:14px;">
+            {{ __('emails.exchange_rate_factors_empty') }}
+        </p>
+    @else
+        <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 8px; border:1px solid #e5e7eb; border-radius:8px; border-collapse:separate; border-spacing:0;">
+            <tr>
+                <td style="{{ $th }}">{{ __('emails.exchange_rate_factors_col_code') }}</td>
+                <td style="{{ $th }}">{{ __('emails.exchange_rate_factors_col_range') }}</td>
+                <td align="right" style="{{ $th }}">{{ __('emails.exchange_rate_factors_col_factor') }}</td>
+            </tr>
+
+            @foreach ($factors as $factor)
+                @php $cell = $td($loop->last, $factor['highlight']); @endphp
+                <tr>
+                    <td style="{{ $cell }} color:#6b7280; font-size:14px;">{{ $factor['code'] }}</td>
+                    <td style="{{ $cell }} color:#111827; font-size:14px; font-weight:{{ $factor['highlight'] ? '600' : '400' }};">
+                        {{ __('emails.exchange_rate_factors_range', ['from' => $factor['rangeFrom'], 'to' => $factor['rangeTo']]) }}
+                    </td>
+                    <td align="right" style="{{ $cell }} color:#111827; font-size:15px; font-weight:600;">{{ $factor['factor'] }}</td>
+                </tr>
+            @endforeach
+        </table>
+
+        <p style="margin:0 0 28px; color:#9ca3af; font-size:12px; line-height:1.5;">
+            {{ __('emails.exchange_rate_factors_notice') }}
+        </p>
+    @endif
+
     <table width="100%" cellpadding="0" cellspacing="0">
         <tr>
             <td align="center">
