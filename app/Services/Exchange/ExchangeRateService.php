@@ -5,6 +5,7 @@ namespace App\Services\Exchange;
 use App\Models\ExchangeRate;
 use App\Models\User;
 use App\Services\Audit\AuditRecorder;
+use App\Services\Notifications\ExchangeRateNotifier;
 use App\Support\Decimals;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
@@ -35,6 +36,7 @@ class ExchangeRateService
         private readonly BusinessDayService $businessDays,
         private readonly ExchangeRateFactorService $factors,
         private readonly AuditRecorder $audit,
+        private readonly ExchangeRateNotifier $notifier,
     ) {
     }
 
@@ -58,6 +60,10 @@ class ExchangeRateService
         foreach ($publications as $publication) {
             $rate = $this->applyPublication($publication['date'], $publication['rate']);
             $dates[] = $rate->applicableDate->toDateString();
+
+            // El notificador decide si toca enviar: descarta fechas pasadas de
+            // la ventana de recuperación y no repite un valor ya avisado.
+            $this->notifier->notify($rate);
         }
 
         // Deja constancia de la corrida: es lo que alimenta el estado del
@@ -168,6 +174,11 @@ class ExchangeRateService
             ],
         );
 
+        // Una corrección manual también es un cambio del tipo de cambio: quien
+        // está en la lista lo usa para operar y no puede quedarse con el valor
+        // que se envió por la mañana.
+        $this->notifier->notify($rate);
+
         return $rate;
     }
 
@@ -188,7 +199,7 @@ class ExchangeRateService
 
         $now = Carbon::now();
 
-        return ExchangeRate::create([
+        $rate = ExchangeRate::create([
             'applicableDate' => $applicableDate->toDateString(),
             'manualRate' => $this->round($manualRate),
             'effectiveRate' => $this->round($manualRate),
@@ -199,6 +210,10 @@ class ExchangeRateService
             'createdAt' => $now,
             'updatedAt' => $now,
         ]);
+
+        $this->notifier->notify($rate);
+
+        return $rate;
     }
 
     /**

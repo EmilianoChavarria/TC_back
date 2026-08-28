@@ -18,6 +18,19 @@ return [
     'test_body' => 'Este es un correo de prueba enviado desde la configuración del sistema. Si lo recibió, el envío de correo funciona correctamente.',
     'test_sent_at' => 'Enviado el :datetime.',
 
+    // Aviso del tipo de cambio a la lista de notificaciones.
+    'exchange_rate_updated_subject' => 'Tipo de cambio :date: :rate',
+    'exchange_rate_corrected_subject' => 'Corrección del tipo de cambio :date: :rate',
+    'exchange_rate_updated_title' => 'Tipo de cambio del día',
+    'exchange_rate_updated_heading' => 'Tipo de cambio vigente para:',
+    'exchange_rate_label' => 'Tipo de cambio',
+    'exchange_rate_factor_label' => 'Factor del rango:',
+    'exchange_rate_factor_code' => 'clave :code',
+    'exchange_rate_factor_notice' => 'Informativo: no modifica el tipo de cambio.',
+    'exchange_rate_manual_notice' => 'Este valor se capturó manualmente.',
+    'exchange_rate_correction_notice' => 'Este correo corrige el tipo de cambio enviado antes para esta fecha. Use el valor de abajo.',
+    'exchange_rate_updated_button' => 'Ver en el portal',
+
     'holiday_reminder_subject' => 'Captura pendiente de días feriados :year',
     'holiday_reminder_title' => 'Días feriados :year',
     'holiday_reminder_heading' => 'Aún no se capturan los días feriados de :year.',
