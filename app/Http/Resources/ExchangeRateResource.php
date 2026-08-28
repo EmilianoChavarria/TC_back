@@ -18,6 +18,7 @@ class ExchangeRateResource extends JsonResource
     public function toArray(Request $request): array
     {
         $isManual = $this->manualRate !== null;
+        $isCarried = $this->resource->isCarried();
         $deleted = $this->deletedAt !== null;
 
         return [
@@ -29,6 +30,10 @@ class ExchangeRateResource extends JsonResource
             'publishedRate' => Decimals::rate($this->publishedRate),
             'publishedDate' => $this->publishedDate?->toDateString(),
 
+            // Día feriado: de qué fecha se arrastró el tipo de cambio vigente.
+            'carriedFromDate' => $this->carriedFromDate?->toDateString(),
+            'isCarried' => $isCarried,
+
             // Factor informativo del rango, tal como estaba ese día.
             'factorCode' => $this->factorCode,
             'factorValue' => Decimals::factor($this->factorValue),
@@ -39,7 +44,7 @@ class ExchangeRateResource extends JsonResource
             'effectiveRate' => Decimals::rate($this->effectiveRate),
 
             'source' => $this->source,
-            'sourceLabel' => $isManual ? 'Manual prevalece' : 'Automático',
+            'sourceLabel' => $this->sourceLabel($isManual, $isCarried),
 
             'manualReason' => $this->manualReason,
             'manualSetAt' => $this->manualSetAt?->toIso8601String(),
@@ -51,6 +56,19 @@ class ExchangeRateResource extends JsonResource
             'createdAt' => $this->createdAt?->toIso8601String(),
             'updatedAt' => $this->updatedAt?->toIso8601String(),
         ];
+    }
+
+    private function sourceLabel(bool $isManual, bool $isCarried): string
+    {
+        if ($isManual) {
+            return 'Manual prevalece';
+        }
+
+        // Se dice de dónde viene: un valor idéntico al de ayer sin explicación
+        // se lee como que el proceso no corrió.
+        return $isCarried
+            ? 'Feriado · TC del '.($this->carriedFromDate?->format('d/m/Y') ?? 'día hábil anterior')
+            : 'Automático';
     }
 
     /** «Hoy» / «Siguiente» para las fechas editables. */

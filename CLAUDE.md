@@ -167,6 +167,9 @@ siguiente**: el tipo de cambio de hoy proviene de la publicación de ayer.
    operación**; el factor sólo se guarda y se muestra al lado.
 4. Se guarda en `exchangerates` con la fecha aplicable = día hábil siguiente al
    de la publicación.
+5. Los **días feriados** del rango no tienen publicación aplicable: se les
+   arrastra el tipo de cambio del día hábil anterior (`source = carried`,
+   `carriedFromDate` = fecha de origen). Ver «Días hábiles y feriados».
 
 Ejemplo: publicación 18.7690 con factor 1.0042 (clave 5, rango 18.5–19.5) queda
 como tipo de cambio 18.7690 y factor 1.0042.
@@ -212,6 +215,21 @@ el módulo correspondiente (`HolidayService::dates()`), con los días fijos de
 `config('exchange.holidays')` como respaldo. Ambos servicios son `scoped`: el
 calendario se consulta una sola vez por petición, porque los listados evalúan
 día hábil fila por fila.
+
+**Arrastre del tipo de cambio en feriados**: en un día feriado nadie opera, pero
+el portal se sigue consultando. `sync()` cierra la corrida llamando a
+`carryOverHolidays()`, que deja en cada feriado —hasta el siguiente día hábil,
+así queda listo antes de que llegue— el vigente del día hábil anterior, con
+`source = carried` y `carriedFromDate` apuntando a su origen. Dos feriados
+seguidos se encadenan al mismo día hábil.
+
+Lo que **no** hace, a propósito: no pisa una captura manual del feriado, no
+reescribe fechas pasadas (el valor con el que se operó ese día es un hecho), no
+notifica por correo (es el mismo valor de ayer) y no inventa un registro cuando
+no hay nada anterior que arrastrar. Un feriado futuro ya arrastrado sí se
+reevalúa en cada corrida: si por la tarde llega la publicación del día previo,
+el feriado se queda con ésa. Se desactiva con
+`EXCHANGE_HOLIDAY_CARRY_OVER=false`.
 
 El módulo administra el año en curso y los siguientes según
 `config('holidays.years_ahead')`; capturar fuera de ese rango se rechaza. La
