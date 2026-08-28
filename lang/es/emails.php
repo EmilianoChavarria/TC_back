@@ -31,6 +31,29 @@ return [
     'exchange_rate_correction_notice' => 'Este correo corrige el tipo de cambio enviado antes para esta fecha. Use el valor de abajo.',
     'exchange_rate_updated_button' => 'Ver en el portal',
 
+    // Tabla comparativa: hace 30 días, hoy y mañana.
+    'exchange_rate_comparison_title' => 'Comparativo',
+    'exchange_rate_comparison_col_period' => 'Periodo',
+    'exchange_rate_comparison_col_date' => 'Fecha',
+    'exchange_rate_comparison_col_rate' => 'Tipo de cambio',
+    'exchange_rate_comparison_col_factor' => 'Factor',
+    'exchange_rate_row_past' => 'Hace :days días',
+    'exchange_rate_row_today' => 'Hoy',
+    'exchange_rate_row_tomorrow' => 'Mañana',
+    'exchange_rate_row_applicable' => 'Fecha del aviso',
+    'exchange_rate_row_empty' => 'Sin registro',
+    'exchange_rate_source_manual' => 'Captura manual',
+    'exchange_rate_source_carried' => 'Feriado · TC del :date',
+
+    // Catálogo de factores por rango.
+    'exchange_rate_factors_title' => 'Factores vigentes por rango',
+    'exchange_rate_factors_col_code' => 'Clave',
+    'exchange_rate_factors_col_range' => 'Rango de la publicación',
+    'exchange_rate_factors_col_factor' => 'Equivale a',
+    'exchange_rate_factors_range' => ':from a :to',
+    'exchange_rate_factors_notice' => 'El límite inferior del rango es inclusivo y el superior exclusivo. El factor es informativo y no modifica el tipo de cambio.',
+    'exchange_rate_factors_empty' => 'No hay factores vigentes capturados.',
+
     'holiday_reminder_subject' => 'Captura pendiente de días feriados :year',
     'holiday_reminder_title' => 'Días feriados :year',
     'holiday_reminder_heading' => 'Aún no se capturan los días feriados de :year.',

@@ -52,6 +52,10 @@ class SyncExchangeRateCommand extends Command
             $this->line("  fecha aplicable {$applicableDate}");
         }
 
+        foreach ($result['carried'] as $carried) {
+            $this->line("  feriado {$carried['date']} conserva el TC del {$carried['from']}");
+        }
+
         return self::SUCCESS;
     }
 }

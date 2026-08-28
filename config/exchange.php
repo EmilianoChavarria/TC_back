@@ -40,13 +40,23 @@ return [
     | Días inhábiles fijos
     |--------------------------------------------------------------------------
     | Además de sábados y domingos. Formato YYYY-MM-DD, separados por coma.
-    | Cuando exista el módulo de feriados, este arreglo se sustituye por su
-    | consulta dentro de BusinessDayService.
+    | Respaldo del módulo de días feriados: HolidayService los suma a los
+    | capturados, útil antes de la primera captura.
     */
     'holidays' => array_values(array_filter(array_map(
         'trim',
         explode(',', (string) env('EXCHANGE_RATE_HOLIDAYS', ''))
     ))),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Arrastre en días feriados
+    |--------------------------------------------------------------------------
+    | En un día feriado no hay publicación aplicable. Con esto activado, la
+    | sincronización deja en esa fecha el tipo de cambio del día hábil anterior
+    | para que la consulta del día no quede vacía.
+    */
+    'holiday_carry_over' => (bool) env('EXCHANGE_HOLIDAY_CARRY_OVER', true),
 
     /*
     |--------------------------------------------------------------------------
