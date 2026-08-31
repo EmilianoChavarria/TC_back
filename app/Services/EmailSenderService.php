@@ -90,11 +90,6 @@ class EmailSenderService
             $context['redirectedTo'] = $override;
         }
 
-        if ($mode === EmailConfig::MODE_NORMAL) {
-            $bcc = $this->withAlwaysBcc($to, $cc, $bcc);
-            $context['bcc'] = $bcc;
-        }
-
         try {
             $mailer = Mail::to($to);
 
@@ -123,39 +118,6 @@ class EmailSenderService
 
             return false;
         }
-    }
-
-    /**
-     * Copia oculta permanente de `mail.always_bcc`.
-     *
-     * Se agrega sólo en modo normal: en override el correo ya se redirige
-     * entero a una dirección de pruebas, y colar la copia ahí delataría los
-     * destinatarios reales de producción.
-     *
-     * Se descarta la dirección que ya viene como destinatario o en copia, para
-     * no mandarle el mismo correo dos veces.
-     *
-     * @param string[] $to
-     * @param string[] $cc
-     * @param string[] $bcc
-     * @return string[]
-     */
-    private function withAlwaysBcc(array $to, array $cc, array $bcc): array
-    {
-        $always = $this->clean((array) config('mail.always_bcc', []));
-
-        if ($always === []) {
-            return $bcc;
-        }
-
-        $existing = array_map('mb_strtolower', array_merge($to, $cc, $bcc));
-
-        $extra = array_filter(
-            $always,
-            static fn (string $address) => !in_array(mb_strtolower($address), $existing, true),
-        );
-
-        return array_values(array_merge($bcc, $extra));
     }
 
     /**

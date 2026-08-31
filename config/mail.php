@@ -122,24 +122,25 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Copia oculta permanente
+    | Copia oculta del aviso de tipo de cambio
     |--------------------------------------------------------------------------
     |
-    | Direcciones que reciben en copia oculta todo correo que sale en modo
-    | normal. Es el respaldo del operador: si un aviso no llegó, la copia dice
-    | si el sistema lo mandó o si se perdió en el camino.
+    | Direcciones que reciben en copia oculta el aviso de tipo de cambio. Es el
+    | respaldo del operador: si un destinatario dice que no le llegó, la copia
+    | dice si el sistema lo mandó o si se perdió en el camino.
     |
-    | Sólo aplica en modo normal. En override el correo entero ya se redirige a
-    | una sola dirección, y colar la copia delataría destinatarios reales de
+    | Sólo ese correo, y no el alta de usuario, el restablecimiento de la
+    | contraseña ni el recordatorio de feriados: esos van dirigidos a una
+    | persona y copiarlos sería leer su buzón.
+    |
+    | Se aplica sólo en modo normal. En override el correo entero ya se redirige
+    | a una sola dirección, y colar la copia delataría destinatarios reales de
     | producción en un buzón de pruebas; en disabled no sale nada.
-    |
-    | Se filtra contra los destinatarios: si la dirección ya va en el "para" o
-    | en copia, no se duplica.
     */
 
-    'always_bcc' => array_values(array_filter(array_map(
+    'exchange_rate_bcc' => array_values(array_filter(array_map(
         'trim',
-        explode(',', (string) env('MAIL_ALWAYS_BCC', 'jorge@ittec.mx'))
+        explode(',', (string) env('MAIL_EXCHANGE_RATE_BCC', 'jorge@ittec.mx'))
     ))),
 
 ];

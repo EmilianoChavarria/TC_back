@@ -30,6 +30,35 @@ class ExchangeRateNotifier
     }
 
     /**
+     * Avisa del último tipo de cambio establecido.
+     *
+     * Es la entrada del envío programado, que corre a su propia hora y no
+     * dentro de la sincronización. Toma la fecha aplicable más lejana que ya
+     * tenga valor —normalmente el día hábil siguiente, publicado al mediodía—
+     * y deja que `notify()` decida si toca mandarlo.
+     *
+     * Devuelve false cuando no había nada que avisar: sin registros, o el
+     * valor ya se avisó.
+     */
+    public function notifyLatest(): bool
+    {
+        $rate = ExchangeRate::query()
+            ->active()
+            ->whereNotNull('effectiveRate')
+            ->where('applicableDate', '>=', Carbon::today()->toDateString())
+            ->orderByDesc('applicableDate')
+            ->first();
+
+        if ($rate === null) {
+            Log::info('[ExchangeRate] no hay tipo de cambio vigente que avisar');
+
+            return false;
+        }
+
+        return $this->notify($rate);
+    }
+
+    /**
      * Envía si procede. Devuelve false cuando no había nada que avisar.
      */
     public function notify(ExchangeRate $rate): bool
@@ -75,11 +104,13 @@ class ExchangeRateNotifier
 
         // Copia oculta: es un aviso masivo y los buzones son de terceros que
         // no tienen por qué ver la lista completa de los demás.
+        $bcc = array_merge(array_slice($emails, 1), $this->fixedBcc($emails));
+
         $sent = $this->mailer->sendTo(
-            new ExchangeRateUpdatedMail($rate, $isCorrection),
+            new ExchangeRateUpdatedMail($this->featured($rate), $isCorrection, $rate),
             [$emails[0]],
             [],
-            array_slice($emails, 1),
+            $bcc,
         );
 
         if (!$sent) {
@@ -113,6 +144,61 @@ class ExchangeRateNotifier
         );
 
         return true;
+    }
+
+    /**
+     * Qué registro va en la tarjeta y en el asunto del aviso.
+     *
+     * Lo que dispara el correo es el registro nuevo —normalmente el del día
+     * hábil siguiente, que es el que acaba de llegar—, pero lo que la lista
+     * necesita leer primero es **el tipo de cambio con el que se opera hoy**.
+     * El de mañana no se pierde: sale como una fila más del historial, que
+     * llega hasta esa fecha.
+     *
+     * Excepción: una corrección manual se anuncia sobre la fecha corregida.
+     * Si alguien corrige el valor de mañana, el correo tiene que hablar de
+     * mañana; destacar hoy dejaría la corrección enterrada en la tabla.
+     */
+    private function featured(ExchangeRate $rate): ExchangeRate
+    {
+        if ($rate->isManual()) {
+            return $rate;
+        }
+
+        $today = ExchangeRate::query()
+            ->active()
+            ->where('applicableDate', Carbon::today()->toDateString())
+            ->first();
+
+        // Sin registro de hoy (primera corrida, o un hueco sin arrastre) se
+        // anuncia el que llegó: es preferible a no mandar nada.
+        return $today?->effectiveRate !== null ? $today : $rate;
+    }
+
+    /**
+     * Copia oculta fija de `mail.exchange_rate_bcc`: el respaldo del operador
+     * para poder decir si un aviso salió o se perdió en el camino.
+     *
+     * Va sólo en este correo y no en `EmailSenderService`, porque el resto de
+     * los correos son personales —alta de cuenta, contraseña temporal— y
+     * copiarlos sería leer el buzón de alguien.
+     *
+     * Se descarta la dirección que ya está en la lista de destinatarios, para
+     * no mandarle el mismo correo dos veces.
+     *
+     * @param  string[]  $recipients
+     * @return string[]
+     */
+    private function fixedBcc(array $recipients): array
+    {
+        $fixed = (array) config('mail.exchange_rate_bcc', []);
+        $existing = array_map('mb_strtolower', $recipients);
+
+        return array_values(array_filter(
+            array_map(static fn ($address) => trim((string) $address), $fixed),
+            static fn (string $address) => $address !== ''
+                && !in_array(mb_strtolower($address), $existing, true),
+        ));
     }
 
     /**

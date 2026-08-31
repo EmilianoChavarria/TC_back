@@ -57,7 +57,13 @@ class ExchangeRateUpdatedMail extends Mailable
      */
     public array $factors;
 
-    public function __construct(ExchangeRate $rate, bool $isCorrection = false)
+    /**
+     * @param  ExchangeRate  $rate  El que va en la tarjeta y en el asunto.
+     * @param  ExchangeRate|null  $through  Hasta dónde llega el historial. Es
+     *         el registro que disparó el aviso —normalmente el del día hábil
+     *         siguiente—, que puede ser posterior al que se destaca.
+     */
+    public function __construct(ExchangeRate $rate, bool $isCorrection = false, ?ExchangeRate $through = null)
     {
         $this->supportEmail = (string) (EmailConfig::query()->orderBy('id')->first()?->emailSupport ?? '');
         $this->portalUrl = FrontendUrl::to('tipo-de-cambio');
@@ -70,7 +76,7 @@ class ExchangeRateUpdatedMail extends Mailable
         $this->manualReason = $rate->manualReason;
         $this->isCorrection = $isCorrection;
 
-        $this->history = $this->buildHistory($rate);
+        $this->history = $this->buildHistory($rate, $through ?? $rate);
         $this->summary = $this->buildSummary($this->history);
         $this->factors = $this->buildFactors($rate);
     }
@@ -89,27 +95,29 @@ class ExchangeRateUpdatedMail extends Mailable
     }
 
     /**
-     * Historial de los 30 días anteriores a la fecha que anuncia el aviso,
-     * incluida esa fecha. Sólo se listan los días con registro: un fin de
-     * semana sin arrastre no tiene valor y una fila vacía por cada uno dejaría
-     * la tabla ilegible.
+     * Historial de los 30 días anteriores al último registro del aviso,
+     * incluido. Sólo se listan los días con registro: un fin de semana sin
+     * arrastre no tiene valor y una fila vacía por cada uno dejaría la tabla
+     * ilegible.
      *
-     * La ventana se ancla a la fecha aplicable y no a hoy, para que el valor
-     * que anuncia el correo sea siempre la primera fila.
+     * La ventana se ancla al registro que disparó el aviso —el del día hábil
+     * siguiente— y no a la fecha destacada, para que el valor recién llegado
+     * salga como primera fila aunque lo que se destaque sea el de hoy.
      *
      * @return array<int, array<string, mixed>>
      */
-    private function buildHistory(ExchangeRate $rate): array
+    private function buildHistory(ExchangeRate $rate, ExchangeRate $through): array
     {
         $applicable = $rate->applicableDate->copy()->startOfDay();
-        $from = $applicable->copy()->subDays(self::HISTORY_DAYS_BACK);
+        $last = $through->applicableDate->copy()->startOfDay()->max($applicable);
+        $from = $last->copy()->subDays(self::HISTORY_DAYS_BACK);
         $today = Carbon::today();
 
         // Una sola consulta para toda la tabla: el historial es informativo y
         // no justifica una consulta por fila.
         $rates = ExchangeRate::query()
             ->active()
-            ->whereBetween('applicableDate', [$from->toDateString(), $applicable->toDateString()])
+            ->whereBetween('applicableDate', [$from->toDateString(), $last->toDateString()])
             ->orderBy('applicableDate')
             ->get();
 

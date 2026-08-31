@@ -98,10 +98,6 @@ class ExchangeRateService
         foreach ($publications as $publication) {
             $rate = $this->applyPublication($publication['date'], $publication['rate']);
             $dates[] = $rate->applicableDate->toDateString();
-
-            // El notificador decide si toca enviar: descarta fechas pasadas de
-            // la ventana de recuperación y no repite un valor ya avisado.
-            $this->notifier->notify($rate);
         }
 
         // Los feriados no tienen publicación aplicable: se les arrastra el
@@ -112,6 +108,16 @@ class ExchangeRateService
             $referenceDate->copy()->subDays(max(1, $lookbackDays)),
             $this->businessDays->nextBusinessDay($referenceDate)
         );
+
+        // ⚠️ Aquí NO se avisa por correo. La sincronización corre al mediodía,
+        // cuando publica Banxico, y el aviso sale más tarde por su propio
+        // comando (`exchange-rate:notify`): son dos horarios distintos porque
+        // responden a cosas distintas —la publicación de un tercero y la
+        // rutina de quien lee el correo—. Atarlos obligaría a mover uno cada
+        // vez que se mueve el otro.
+        //
+        // La captura manual sí avisa en el momento: una corrección no puede
+        // esperar a la hora del envío programado.
 
         // Deja constancia de la corrida: es lo que alimenta el estado del
         // proceso automático en el tablero.
