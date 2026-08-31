@@ -34,6 +34,9 @@ class UserService
 
         return User::query()
             ->with(['role', 'security'])
+            // El superadministrador no se lista: es la cuenta raíz del sistema y
+            // no se administra desde esta pantalla.
+            ->whereHas('role', fn ($inner) => $inner->where('roleName', '!=', Role::SUPERADMIN))
             ->when($filters['search'] ?? null, function ($query, $search) {
                 $term = '%'.$search.'%';
 

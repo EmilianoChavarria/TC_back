@@ -40,6 +40,9 @@ class UserController extends Controller
     {
         $roles = Role::query()
             ->where('isActive', true)
+            // SUPERADMIN queda fuera: es la cuenta raíz del sistema y no se
+            // asigna desde los formularios de alta y edición.
+            ->where('roleName', '!=', Role::SUPERADMIN)
             ->orderBy('id')
             ->get()
             ->map(fn (Role $role) => [
