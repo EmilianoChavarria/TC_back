@@ -99,7 +99,8 @@ class PublicExchangeRateService
     }
 
     /**
-     * Variación de cada fecha contra la anterior de la propia serie.
+     * Historial del periodo: valor, factor de esa fecha y variación contra la
+     * fecha anterior de la propia serie.
      *
      * @param Collection<int, ExchangeRate> $series
      * @return array<int, array<string, mixed>>
@@ -113,6 +114,13 @@ class PublicExchangeRateService
             $rows[] = [
                 'date' => $rate->applicableDate->toDateString(),
                 'rate' => Decimals::rate($rate->effectiveRate),
+
+                // El factor que le tocó a ESA fecha, no el vigente hoy: el
+                // registro guarda su propia copia (`factorValue`), así que el
+                // historial sigue siendo fiel aunque el catálogo cambie
+                // después. La clave del factor no sale, igual que arriba.
+                'factor' => Decimals::factor($rate->factorValue),
+
                 'change' => $this->change($rate, $previous),
             ];
 

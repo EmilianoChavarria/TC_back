@@ -120,4 +120,27 @@ return [
         'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Laravel')),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Copia oculta del aviso de tipo de cambio
+    |--------------------------------------------------------------------------
+    |
+    | Direcciones que reciben en copia oculta el aviso de tipo de cambio. Es el
+    | respaldo del operador: si un destinatario dice que no le llegó, la copia
+    | dice si el sistema lo mandó o si se perdió en el camino.
+    |
+    | Sólo ese correo, y no el alta de usuario, el restablecimiento de la
+    | contraseña ni el recordatorio de feriados: esos van dirigidos a una
+    | persona y copiarlos sería leer su buzón.
+    |
+    | Se aplica sólo en modo normal. En override el correo entero ya se redirige
+    | a una sola dirección, y colar la copia delataría destinatarios reales de
+    | producción en un buzón de pruebas; en disabled no sale nada.
+    */
+
+    'exchange_rate_bcc' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', (string) env('MAIL_EXCHANGE_RATE_BCC', 'jorge@ittec.mx'))
+    ))),
+
 ];

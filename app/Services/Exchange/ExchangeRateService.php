@@ -3,6 +3,7 @@
 namespace App\Services\Exchange;
 
 use App\Models\ExchangeRate;
+use App\Models\ExchangeRateSyncRun;
 use App\Models\User;
 use App\Services\Audit\AuditRecorder;
 use App\Services\Notifications\ExchangeRateNotifier;
@@ -10,6 +11,7 @@ use App\Support\Decimals;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 /**
  * Cálculo y captura del tipo de cambio.
@@ -42,19 +44,50 @@ class ExchangeRateService
         private readonly ExchangeRateFactorService $factors,
         private readonly AuditRecorder $audit,
         private readonly ExchangeRateNotifier $notifier,
+        private readonly ExchangeRateSyncLogger $syncLog,
     ) {
     }
 
     /**
      * Trae las publicaciones recientes y actualiza las fechas aplicables.
      *
+     * Cada corrida deja una fila en `exchangeratesyncruns`, termine bien o mal.
+     * Se registra aquí y no en el comando porque el panel dispara la misma
+     * sincronización por HTTP: hacerlo en cada punto de entrada dejaría fuera
+     * al que se olvide.
+     *
+     * @param string $trigger Origen de la corrida (ExchangeRateSyncRun::TRIGGER_*)
      * @return array{processed: int, dates: array<int, string>, carried: array<int, array{date: string, from: string}>}
      */
-    public function sync(?Carbon $referenceDate = null, ?int $lookbackDays = null): array
-    {
+    public function sync(
+        ?Carbon $referenceDate = null,
+        ?int $lookbackDays = null,
+        string $trigger = ExchangeRateSyncRun::TRIGGER_CONSOLE,
+        ?User $actor = null,
+    ): array {
         $referenceDate = ($referenceDate ?? Carbon::today())->copy()->startOfDay();
         $lookbackDays = $lookbackDays ?? (int) config('exchange.banxico.lookback_days', 7);
 
+        $run = $this->syncLog->start($trigger, $referenceDate, $lookbackDays, $actor);
+
+        try {
+            $result = $this->runSync($referenceDate, $lookbackDays);
+        } catch (Throwable $e) {
+            $this->syncLog->failed($run, $e);
+
+            throw $e;
+        }
+
+        $this->syncLog->succeeded($run, $result);
+
+        return $result;
+    }
+
+    /**
+     * @return array{processed: int, dates: array<int, string>, carried: array<int, array{date: string, from: string}>}
+     */
+    private function runSync(Carbon $referenceDate, int $lookbackDays): array
+    {
         $publications = $this->banxico->publicationsBetween(
             $referenceDate->copy()->subDays(max(1, $lookbackDays)),
             $referenceDate
@@ -65,10 +98,6 @@ class ExchangeRateService
         foreach ($publications as $publication) {
             $rate = $this->applyPublication($publication['date'], $publication['rate']);
             $dates[] = $rate->applicableDate->toDateString();
-
-            // El notificador decide si toca enviar: descarta fechas pasadas de
-            // la ventana de recuperación y no repite un valor ya avisado.
-            $this->notifier->notify($rate);
         }
 
         // Los feriados no tienen publicación aplicable: se les arrastra el
@@ -79,6 +108,16 @@ class ExchangeRateService
             $referenceDate->copy()->subDays(max(1, $lookbackDays)),
             $this->businessDays->nextBusinessDay($referenceDate)
         );
+
+        // ⚠️ Aquí NO se avisa por correo. La sincronización corre al mediodía,
+        // cuando publica Banxico, y el aviso sale más tarde por su propio
+        // comando (`exchange-rate:notify`): son dos horarios distintos porque
+        // responden a cosas distintas —la publicación de un tercero y la
+        // rutina de quien lee el correo—. Atarlos obligaría a mover uno cada
+        // vez que se mueve el otro.
+        //
+        // La captura manual sí avisa en el momento: una corrección no puede
+        // esperar a la hora del envío programado.
 
         // Deja constancia de la corrida: es lo que alimenta el estado del
         // proceso automático en el tablero.

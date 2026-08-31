@@ -3,6 +3,8 @@
 @section('title', __('emails.holiday_reminder_title', ['year' => $year]))
 
 @section('content')
+    @php $brand = config('emails.brand'); @endphp
+
     <p style="margin:0 0 20px; color:#111827; font-size:16px; line-height:1.6;">
         {{ __('emails.holiday_reminder_heading', ['year' => $year]) }}
     </p>
@@ -18,7 +20,7 @@
     <table width="100%" cellpadding="0" cellspacing="0">
         <tr>
             <td align="center">
-                <a href="{{ $portalUrl }}" style="display:inline-block; background-color:#2563eb; color:#ffffff; text-decoration:none; font-size:15px; font-weight:600; padding:14px 40px; border-radius:6px;">
+                <a href="{{ $portalUrl }}" style="display:inline-block; background-color:{{ $brand['primary'] }}; color:#ffffff; text-decoration:none; font-size:15px; font-weight:600; padding:14px 40px; border-radius:6px;">
                     {{ __('emails.holiday_reminder_button') }}
                 </a>
             </td>

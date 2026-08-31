@@ -4,6 +4,7 @@ namespace App\Mail;
 
 use App\Mail\Concerns\HasOverrideNotice;
 use App\Models\EmailConfig;
+use App\Support\FrontendUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Queue\SerializesModels;
@@ -22,7 +23,7 @@ class UserRegisteredMail extends Mailable
         public string $password,
     ) {
         $this->supportEmail = (string) (EmailConfig::query()->orderBy('id')->first()?->emailSupport ?? '');
-        $this->loginUrl = (string) config('security.frontend_url');
+        $this->loginUrl = FrontendUrl::to('login');
     }
 
     public function build(): self

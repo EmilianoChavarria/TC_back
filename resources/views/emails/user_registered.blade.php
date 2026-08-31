@@ -3,6 +3,8 @@
 @section('title', __('emails.welcome_title'))
 
 @section('content')
+    @php $brand = config('emails.brand'); @endphp
+
     <p style="margin:0 0 20px; color:#111827; font-size:16px; line-height:1.6;">
         {{ __('emails.greeting', ['name' => $fullName]) }}
     </p>
@@ -34,7 +36,7 @@
     <table width="100%" cellpadding="0" cellspacing="0">
         <tr>
             <td align="center">
-                <a href="{{ $loginUrl }}" style="display:inline-block; background-color:#2563eb; color:#ffffff; text-decoration:none; font-size:15px; font-weight:600; padding:14px 40px; border-radius:6px;">
+                <a href="{{ $loginUrl }}" style="display:inline-block; background-color:{{ $brand['primary'] }}; color:#ffffff; text-decoration:none; font-size:15px; font-weight:600; padding:14px 40px; border-radius:6px;">
                     {{ __('emails.login_button') }}
                 </a>
             </td>
@@ -43,7 +45,7 @@
             <td align="center" style="padding-top:12px;">
                 <p style="margin:0; color:#6b7280; font-size:13px;">
                     {{ __('emails.login_url_label') }}
-                    <a href="{{ $loginUrl }}" style="color:#2563eb; text-decoration:none;">{{ $loginUrl }}</a>
+                    <a href="{{ $loginUrl }}" style="color:{{ $brand['primary_dark'] }}; text-decoration:none;">{{ $loginUrl }}</a>
                 </p>
             </td>
         </tr>

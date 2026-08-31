@@ -12,20 +12,43 @@ use Illuminate\Support\Facades\Schedule;
 
 /*
  * Banxico publica el FIX cada día hábil alrededor del mediodía y esa publicación
- * aplica al día hábil siguiente. Se corre por la tarde y se repite más tarde por
- * si la publicación se retrasó; la ventana de días hacia atrás
+ * aplica al día hábil siguiente. Se corre a esa hora y se repite por la tarde
+ * por si la publicación se retrasó; la ventana de días hacia atrás
  * (BANXICO_LOOKBACK_DAYS) recupera sola cualquier día caído.
  */
-Schedule::command('exchange-rate:sync')
+Schedule::command('exchange-rate:sync --days=30 --trigger=scheduled')
     ->weekdays()
-    ->at('13:30')
+    ->at('12:00')
     ->timezone('America/Mexico_City')
     ->withoutOverlapping()
     ->onOneServer();
 
-Schedule::command('exchange-rate:sync')
+Schedule::command('exchange-rate:sync --days=30 --trigger=scheduled')
     ->weekdays()
     ->at('18:00')
+    ->timezone('America/Mexico_City')
+    ->withoutOverlapping()
+    ->onOneServer();
+
+/*
+ * El aviso a la lista va aparte de la sincronización y dos horas después: el
+ * horario del correo lo manda la rutina de quien lo lee, no el de la
+ * publicación de Banxico.
+ *
+ * Se repite tras la corrida de recuperación de las 18:00, para el día en que la
+ * publicación llegó tarde y a las 14:00 no había nada nuevo que avisar. No
+ * duplica el correo: el notificador compara el valor ya enviado.
+ */
+Schedule::command('exchange-rate:notify')
+    ->weekdays()
+    ->at('14:00')
+    ->timezone('America/Mexico_City')
+    ->withoutOverlapping()
+    ->onOneServer();
+
+Schedule::command('exchange-rate:notify')
+    ->weekdays()
+    ->at('18:15')
     ->timezone('America/Mexico_City')
     ->withoutOverlapping()
     ->onOneServer();

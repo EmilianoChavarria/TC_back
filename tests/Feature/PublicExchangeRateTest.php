@@ -126,6 +126,39 @@ class PublicExchangeRateTest extends TestCase
         );
     }
 
+    public function test_el_historial_trae_el_factor_de_cada_fecha(): void
+    {
+        // Factores distintos por fecha: si el servicio devolviera el vigente de
+        // hoy para todas las filas, esta prueba lo caza.
+        $this->rate(Carbon::today()->subDays(2)->toDateString(), '17.4000', '0.800');
+        $this->rate(Carbon::today()->toDateString(), '16.9000', '0.775');
+
+        $data = $this->getJson('/api/public/exchange-rate')->json('data');
+
+        $porFecha = array_column($data['history'], 'factor', 'date');
+
+        $this->assertSame('0.775', $porFecha[Carbon::today()->toDateString()]);
+        $this->assertSame('0.800', $porFecha[Carbon::today()->subDays(2)->toDateString()]);
+
+        // Sale el valor del factor, nunca su clave.
+        $this->assertStringNotContainsString(
+            '"factorCode"',
+            (string) json_encode($data, JSON_UNESCAPED_UNICODE)
+        );
+    }
+
+    public function test_una_fecha_sin_factor_no_rompe_el_historial(): void
+    {
+        // Ninguna clave cubre la publicación: el registro se guarda sin factor
+        // y la consulta pública tiene que seguir respondiendo.
+        $this->rate(Carbon::today()->toDateString(), '31.0000');
+
+        $data = $this->getJson('/api/public/exchange-rate')->json('data');
+
+        $this->assertNull($data['factor']);
+        $this->assertNull($data['history'][0]['factor']);
+    }
+
     public function test_en_dia_sin_registro_responde_el_ultimo_disponible(): void
     {
         // Fin de semana o feriado: la consulta pública no puede quedarse muda.
@@ -146,12 +179,13 @@ class PublicExchangeRateTest extends TestCase
         $response->assertJsonPath('data.available', false);
     }
 
-    private function rate(string $date, string $value): ExchangeRate
+    private function rate(string $date, string $value, ?string $factor = null): ExchangeRate
     {
         return ExchangeRate::create([
             'applicableDate' => $date,
             'publishedRate' => $value,
             'publishedDate' => Carbon::parse($date)->subDay()->toDateString(),
+            'factorValue' => $factor,
             'calculatedRate' => $value,
             'effectiveRate' => $value,
             'source' => ExchangeRate::SOURCE_AUTOMATIC,
