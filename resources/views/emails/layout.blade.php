@@ -7,13 +7,19 @@
     <title>@yield('title')</title>
 </head>
 
+@php
+    // Paleta de marca. Va aquí y no en cada vista porque los clientes de correo
+    // sólo respetan el estilo en línea y el hexadecimal se repetiría por todos lados.
+    $brand = config('emails.brand');
+@endphp
+
 <body style="margin:0; padding:0; background-color:#f4f4f7; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
     <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f7; padding:40px 0;">
         <tr>
             <td align="center">
                 <table width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff; border-radius:8px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.05);">
                     <tr>
-                        <td style="padding:28px 30px; text-align:center; background-color:#1f2937;">
+                        <td style="padding:28px 30px; text-align:center; background-color:{{ $brand['primary'] }};">
                             <span style="color:#ffffff; font-size:20px; font-weight:600; letter-spacing:0.5px;">
                                 {{ config('app.name') }}
                             </span>
@@ -31,7 +37,7 @@
                             @if (!empty($supportEmail))
                                 <p style="margin:0; color:#6b7280; font-size:13px; line-height:1.5;">
                                     {{ __('emails.footer_support') }}
-                                    <a href="mailto:{{ $supportEmail }}" style="color:#2563eb;">{{ $supportEmail }}</a>
+                                    <a href="mailto:{{ $supportEmail }}" style="color:{{ $brand['primary_dark'] }};">{{ $supportEmail }}</a>
                                 </p>
                             @endif
 
@@ -42,7 +48,7 @@
                             @endif
 
                             <p style="margin:16px 0 0; color:#9ca3af; font-size:12px;">
-                                &copy; {{ now()->year }} {{ config('app.name') }}. {{ __('emails.footer_rights') }}
+                                &copy; {{ now()->year }} ITTEC. Tecnología Inteligente. Todos los derechos reservados.
                             </p>
                         </td>
                     </tr>
