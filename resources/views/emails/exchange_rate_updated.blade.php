@@ -39,30 +39,38 @@
     </p>
 
     <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 24px; border:1px solid {{ $brand['primary_border'] }}; border-radius:8px; background-color:{{ $brand['primary_soft'] }};">
+        {{-- Tipo de cambio y factor a la par y del mismo tamaño: son dos datos
+             del día, no uno principal y una nota al pie. Van en celdas de una
+             misma fila y no en columnas CSS, que Outlook no reparte. --}}
         <tr>
-            <td style="padding:24px 24px 8px; text-align:center;">
-                <span style="color:#6b7280; font-size:13px;">{{ __('emails.exchange_rate_label') }}</span>
-            </td>
-        </tr>
-        <tr>
-            <td style="padding:0 24px 24px; text-align:center;">
-                <span style="color:{{ $brand['primary_dark'] }}; font-size:34px; font-weight:700; letter-spacing:-0.5px;">{{ $effectiveRate }}</span>
+            <td style="padding:24px;">
+                <table width="100%" cellpadding="0" cellspacing="0">
+                    <tr>
+                        <td width="{{ $factorValue ? '50%' : '100%' }}" align="center" style="text-align:center;">
+                            <span style="color:#6b7280; font-size:13px;">{{ __('emails.exchange_rate_label') }}</span>
+                            <br>
+                            <span style="color:{{ $brand['primary_dark'] }}; font-size:34px; font-weight:700; letter-spacing:-0.5px; line-height:1.3;">{{ $effectiveRate }}</span>
+                        </td>
+
+                        @if ($factorValue)
+                            <td width="50%" align="center" style="text-align:center; border-left:1px solid {{ $brand['primary_border'] }};">
+                                <span style="color:#6b7280; font-size:13px;">{{ __('emails.exchange_rate_factor_label') }}</span>
+                                <br>
+                                <span style="color:{{ $brand['primary_dark'] }}; font-size:34px; font-weight:700; letter-spacing:-0.5px; line-height:1.3;">{{ $factorValue }}</span>
+                            </td>
+                        @endif
+                    </tr>
+                </table>
             </td>
         </tr>
 
         @if ($factorValue)
+            {{-- El factor es informativo y no modifica el tipo de cambio. Sin
+                 decirlo, quien recibe el correo puede intentar multiplicar uno
+                 por otro, y ahora que están a la par se nota más. --}}
             <tr>
-                <td style="padding:16px 24px; text-align:center; border-top:1px solid {{ $brand['primary_border'] }};">
-                    <span style="color:#6b7280; font-size:13px;">{{ __('emails.exchange_rate_factor_label') }}</span>
-                    <span style="color:#111827; font-size:15px; font-weight:600;"> {{ $factorValue }}</span>
-                    @if ($factorCode !== null)
-                        <span style="color:#9ca3af; font-size:13px;"> · {{ __('emails.exchange_rate_factor_code', ['code' => $factorCode]) }}</span>
-                    @endif
-                    {{-- El factor es informativo y no modifica el tipo de cambio.
-                         Sin decirlo, quien recibe el correo puede intentar
-                         multiplicar uno por otro. --}}
-                    <br>
-                    <span style="color:#9ca3af; font-size:12px;">{{ __('emails.exchange_rate_factor_notice') }}</span>
+                <td style="padding:0 24px 20px; text-align:center;">
+                    <span style="color:#9ca3af; font-size:12px; line-height:1.5;">{{ __('emails.exchange_rate_factor_notice') }}</span>
                 </td>
             </tr>
         @endif

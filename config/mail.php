@@ -120,4 +120,26 @@ return [
         'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Laravel')),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Copia oculta permanente
+    |--------------------------------------------------------------------------
+    |
+    | Direcciones que reciben en copia oculta todo correo que sale en modo
+    | normal. Es el respaldo del operador: si un aviso no llegó, la copia dice
+    | si el sistema lo mandó o si se perdió en el camino.
+    |
+    | Sólo aplica en modo normal. En override el correo entero ya se redirige a
+    | una sola dirección, y colar la copia delataría destinatarios reales de
+    | producción en un buzón de pruebas; en disabled no sale nada.
+    |
+    | Se filtra contra los destinatarios: si la dirección ya va en el "para" o
+    | en copia, no se duplica.
+    */
+
+    'always_bcc' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', (string) env('MAIL_ALWAYS_BCC', 'jorge@ittec.mx'))
+    ))),
+
 ];
