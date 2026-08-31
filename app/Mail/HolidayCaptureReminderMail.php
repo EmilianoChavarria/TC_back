@@ -4,6 +4,7 @@ namespace App\Mail;
 
 use App\Mail\Concerns\HasOverrideNotice;
 use App\Models\EmailConfig;
+use App\Support\FrontendUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Queue\SerializesModels;
@@ -21,7 +22,7 @@ class HolidayCaptureReminderMail extends Mailable
     public function __construct(public int $year)
     {
         $this->supportEmail = (string) (EmailConfig::query()->orderBy('id')->first()?->emailSupport ?? '');
-        $this->portalUrl = (string) config('security.frontend_url');
+        $this->portalUrl = FrontendUrl::to('dias-feriados');
     }
 
     public function build(): self
