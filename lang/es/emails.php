@@ -31,13 +31,15 @@ return [
     'exchange_rate_correction_notice' => 'Este correo corrige el tipo de cambio enviado antes para esta fecha. Use el valor de abajo.',
     'exchange_rate_updated_button' => 'Ver en el portal',
 
-    // Tabla comparativa: hace 30 días, hoy y mañana.
-    'exchange_rate_comparison_title' => 'Comparativo',
-    'exchange_rate_comparison_col_period' => 'Periodo',
-    'exchange_rate_comparison_col_date' => 'Fecha',
-    'exchange_rate_comparison_col_rate' => 'Tipo de cambio',
-    'exchange_rate_comparison_col_factor' => 'Factor',
-    'exchange_rate_row_past' => 'Hace :days días',
+    // Historial de los últimos 30 días.
+    'exchange_rate_history_title' => 'Historial de los últimos :days días',
+    'exchange_rate_history_summary' => ':records registros · máximo :max · mínimo :min',
+    'exchange_rate_history_col_date' => 'Fecha',
+    'exchange_rate_history_col_rate' => 'Tipo de cambio',
+    'exchange_rate_history_col_change' => 'Variación',
+    'exchange_rate_history_col_factor' => 'Factor',
+    'exchange_rate_history_notice' => 'La variación es contra el registro anterior de la tabla. Los días sin publicación aplicable no aparecen.',
+    'exchange_rate_history_empty' => 'Todavía no hay registros en el periodo.',
     'exchange_rate_row_today' => 'Hoy',
     'exchange_rate_row_tomorrow' => 'Mañana',
     'exchange_rate_row_applicable' => 'Fecha del aviso',
@@ -61,7 +63,7 @@ return [
     'holiday_reminder_notice' => 'Este recordatorio se enviará todos los días hasta que se capture el primer día feriado del año.',
     'holiday_reminder_button' => 'Capturar días feriados',
 
-    'footer_support' => '¿Dudas? Escriba a',
+    'footer_support' => 'Este correo fue enviado desde una dirección no monitoreada. Si tiene dudas con respecto a su contenido, póngase en contacto al siguiente correo: ',
     'footer_rights' => 'Todos los derechos reservados.',
     'override_notice' => 'Este correo se generó en modo de pruebas. En producción se habría enviado a :recipient.',
 ];

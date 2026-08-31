@@ -7,6 +7,7 @@ use App\Models\EmailConfig;
 use App\Models\ExchangeRate;
 use App\Models\ExchangeRateFactor;
 use App\Support\Decimals;
+use App\Support\FrontendUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Queue\SerializesModels;
@@ -19,8 +20,8 @@ class ExchangeRateUpdatedMail extends Mailable
 {
     use Queueable, SerializesModels, HasOverrideNotice;
 
-    /** Ventana hacia atrás de la tabla comparativa. */
-    private const COMPARISON_DAYS_BACK = 30;
+    /** Ventana hacia atrás del historial que se anexa al aviso. */
+    private const HISTORY_DAYS_BACK = 30;
 
     public string $supportEmail;
     public string $portalUrl;
@@ -36,11 +37,18 @@ class ExchangeRateUpdatedMail extends Mailable
     public bool $isCorrection;
 
     /**
-     * Tabla comparativa: hace 30 días, hoy y mañana.
+     * Historial de los últimos 30 días, del más reciente al más antiguo.
      *
      * @var array<int, array<string, mixed>>
      */
-    public array $comparison;
+    public array $history;
+
+    /**
+     * Máximo, mínimo y número de registros del periodo que cubre el historial.
+     *
+     * @var array<string, mixed>
+     */
+    public array $summary;
 
     /**
      * Catálogo vigente de factores con su rango y su equivalencia.
@@ -52,7 +60,7 @@ class ExchangeRateUpdatedMail extends Mailable
     public function __construct(ExchangeRate $rate, bool $isCorrection = false)
     {
         $this->supportEmail = (string) (EmailConfig::query()->orderBy('id')->first()?->emailSupport ?? '');
-        $this->portalUrl = (string) config('security.frontend_url');
+        $this->portalUrl = FrontendUrl::to('tipo-de-cambio');
 
         $this->applicableDate = $rate->applicableDate->translatedFormat('l j \d\e F \d\e Y');
         $this->effectiveRate = (string) Decimals::rate($rate->effectiveRate);
@@ -62,7 +70,8 @@ class ExchangeRateUpdatedMail extends Mailable
         $this->manualReason = $rate->manualReason;
         $this->isCorrection = $isCorrection;
 
-        $this->comparison = $this->buildComparison($rate);
+        $this->history = $this->buildHistory($rate);
+        $this->summary = $this->buildSummary($this->history);
         $this->factors = $this->buildFactors($rate);
     }
 
@@ -80,62 +89,106 @@ class ExchangeRateUpdatedMail extends Mailable
     }
 
     /**
-     * Filas de la tabla comparativa.
+     * Historial de los 30 días anteriores a la fecha que anuncia el aviso,
+     * incluida esa fecha. Sólo se listan los días con registro: un fin de
+     * semana sin arrastre no tiene valor y una fila vacía por cada uno dejaría
+     * la tabla ilegible.
      *
-     * Las fechas se anclan al día de HOY y no a la fecha aplicable del aviso:
-     * quien lee el correo lo hace hoy, y «mañana» tiene que significar mañana.
-     * Cuando la fecha aplicable no cae en esa ventana —el día hábil siguiente
-     * a un viernes o a un feriado— se agrega como fila extra para que el valor
-     * que anuncia el correo siempre aparezca en la tabla.
+     * La ventana se ancla a la fecha aplicable y no a hoy, para que el valor
+     * que anuncia el correo sea siempre la primera fila.
      *
      * @return array<int, array<string, mixed>>
      */
-    private function buildComparison(ExchangeRate $rate): array
+    private function buildHistory(ExchangeRate $rate): array
     {
-        $today = Carbon::today();
         $applicable = $rate->applicableDate->copy()->startOfDay();
+        $from = $applicable->copy()->subDays(self::HISTORY_DAYS_BACK);
+        $today = Carbon::today();
 
-        /** @var array<string, string> $targets fecha => etiqueta */
-        $targets = [
-            $today->copy()->subDays(self::COMPARISON_DAYS_BACK)->toDateString() => __('emails.exchange_rate_row_past', ['days' => self::COMPARISON_DAYS_BACK]),
-            $today->toDateString() => __('emails.exchange_rate_row_today'),
-            $today->copy()->addDay()->toDateString() => __('emails.exchange_rate_row_tomorrow'),
-        ];
-
-        if (!array_key_exists($applicable->toDateString(), $targets)) {
-            $targets[$applicable->toDateString()] = __('emails.exchange_rate_row_applicable');
-        }
-
-        ksort($targets);
-
-        // Una sola consulta para todas las fechas: la tabla es decorativa y no
-        // justifica una consulta por fila.
+        // Una sola consulta para toda la tabla: el historial es informativo y
+        // no justifica una consulta por fila.
         $rates = ExchangeRate::query()
             ->active()
-            ->whereIn('applicableDate', array_keys($targets))
-            ->get()
-            ->keyBy(fn (ExchangeRate $row) => $row->applicableDate->toDateString());
+            ->whereBetween('applicableDate', [$from->toDateString(), $applicable->toDateString()])
+            ->orderBy('applicableDate')
+            ->get();
 
         $rows = [];
+        $previous = null;
 
-        foreach ($targets as $date => $label) {
-            $found = $rates->get($date);
-            $carbon = Carbon::parse($date);
+        // Se recorre en orden ascendente porque la variación de cada día se
+        // calcula contra el registro anterior; la tabla se invierte al final.
+        foreach ($rates as $row) {
+            $value = $row->effectiveRate !== null ? (float) $row->effectiveRate : null;
+            $delta = ($value !== null && $previous !== null) ? $value - $previous : null;
+
+            $date = $row->applicableDate->copy()->startOfDay();
 
             $rows[] = [
-                'label' => $label,
-                'date' => $carbon->format('d/m/Y'),
-                'weekday' => $carbon->translatedFormat('D'),
-                'rate' => $found?->effectiveRate !== null ? Decimals::rate($found->effectiveRate) : null,
-                'factorValue' => $found ? Decimals::factor($found->factorValue) : null,
-                'factorCode' => $found?->factorCode,
-                'note' => $found ? $this->sourceNote($found) : null,
+                'date' => $date->format('d/m/Y'),
+                'weekday' => ucfirst($date->translatedFormat('D')),
+                'rate' => Decimals::rate($row->effectiveRate),
+                'rateValue' => $value,
+                'delta' => $delta !== null ? Decimals::rate(abs($delta)) : null,
+                'deltaSign' => $delta === null ? null : ($delta > 0 ? 'up' : ($delta < 0 ? 'down' : 'flat')),
+                'factorValue' => Decimals::factor($row->factorValue),
+                'factorCode' => $row->factorCode,
+                'note' => $this->sourceNote($row),
+                'tag' => $this->dateTag($date, $today, $applicable),
                 // La fila del valor que anuncia este correo va resaltada.
-                'highlight' => $date === $applicable->toDateString(),
+                'highlight' => $date->equalTo($applicable),
             ];
+
+            if ($value !== null) {
+                $previous = $value;
+            }
         }
 
-        return $rows;
+        return array_reverse($rows);
+    }
+
+    /** Etiqueta corta que ubica la fila sin tener que leer la fecha. */
+    private function dateTag(Carbon $date, Carbon $today, Carbon $applicable): ?string
+    {
+        if ($date->equalTo($today)) {
+            return __('emails.exchange_rate_row_today');
+        }
+
+        if ($date->equalTo($today->copy()->addDay())) {
+            return __('emails.exchange_rate_row_tomorrow');
+        }
+
+        if ($date->equalTo($applicable)) {
+            return __('emails.exchange_rate_row_applicable');
+        }
+
+        return null;
+    }
+
+    /**
+     * Máximo y mínimo del periodo. Da contexto de si el valor del aviso es
+     * alto o bajo respecto al mes sin tener que leer las veinte filas.
+     *
+     * @param  array<int, array<string, mixed>>  $history
+     * @return array<string, mixed>
+     */
+    private function buildSummary(array $history): array
+    {
+        $values = array_values(array_filter(
+            array_column($history, 'rateValue'),
+            fn ($value) => $value !== null
+        ));
+
+        if ($values === []) {
+            return ['days' => self::HISTORY_DAYS_BACK, 'records' => 0, 'max' => null, 'min' => null];
+        }
+
+        return [
+            'days' => self::HISTORY_DAYS_BACK,
+            'records' => count($values),
+            'max' => Decimals::rate(max($values)),
+            'min' => Decimals::rate(min($values)),
+        ];
     }
 
     /** De dónde sale el valor de la fila; null cuando es la publicación normal. */

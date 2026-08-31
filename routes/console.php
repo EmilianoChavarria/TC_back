@@ -16,14 +16,14 @@ use Illuminate\Support\Facades\Schedule;
  * si la publicación se retrasó; la ventana de días hacia atrás
  * (BANXICO_LOOKBACK_DAYS) recupera sola cualquier día caído.
  */
-Schedule::command('exchange-rate:sync')
+Schedule::command('exchange-rate:sync --days=30')
     ->weekdays()
     ->at('13:30')
     ->timezone('America/Mexico_City')
     ->withoutOverlapping()
     ->onOneServer();
 
-Schedule::command('exchange-rate:sync')
+Schedule::command('exchange-rate:sync --days=30')
     ->weekdays()
     ->at('18:00')
     ->timezone('America/Mexico_City')
