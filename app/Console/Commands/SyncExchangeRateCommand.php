@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\ExchangeRateSyncRun;
 use App\Services\Audit\AuditRecorder;
 use App\Services\Exchange\ExchangeRateService;
 use Illuminate\Console\Command;
@@ -17,7 +18,8 @@ class SyncExchangeRateCommand extends Command
 {
     protected $signature = 'exchange-rate:sync
                             {--date= : Fecha de referencia YYYY-MM-DD (por omisión, hoy)}
-                            {--days= : Días hacia atrás a consultar}';
+                            {--days= : Días hacia atrás a consultar}
+                            {--trigger=console : Origen de la corrida: scheduled o console}';
 
     protected $description = 'Sincroniza el tipo de cambio FIX de Banxico y registra el factor de su rango';
 
@@ -27,7 +29,7 @@ class SyncExchangeRateCommand extends Command
         $days = $this->option('days') !== null ? (int) $this->option('days') : null;
 
         try {
-            $result = $rates->sync($date, $days);
+            $result = $rates->sync($date, $days, $this->trigger());
         } catch (Throwable $e) {
             // Un fallo del servicio externo no debe romper la programación: se
             // reporta y el siguiente intento recupera los días pendientes.
@@ -57,5 +59,17 @@ class SyncExchangeRateCommand extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * La programación diaria pasa `--trigger=scheduled`. Sin ese dato la
+     * bitácora no distinguiría una corrida automática de una invocación suelta
+     * en la terminal, que es lo primero que se pregunta cuando un día falta.
+     */
+    private function trigger(): string
+    {
+        return $this->option('trigger') === ExchangeRateSyncRun::TRIGGER_SCHEDULED
+            ? ExchangeRateSyncRun::TRIGGER_SCHEDULED
+            : ExchangeRateSyncRun::TRIGGER_CONSOLE;
     }
 }

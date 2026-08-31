@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Exchange\ManualExchangeRateRequest;
 use App\Http\Resources\ExchangeRateResource;
 use App\Models\ExchangeRate;
+use App\Models\ExchangeRateSyncRun;
 use App\Models\User;
 use App\Services\Exchange\BusinessDayService;
 use App\Services\Exchange\ExchangeRateService;
@@ -141,6 +142,8 @@ class ExchangeRateController extends Controller
             $result = $this->rates->sync(
                 $date ? Carbon::createFromFormat('Y-m-d', $date) : null,
                 $request->integer('days') ?: null,
+                ExchangeRateSyncRun::TRIGGER_MANUAL,
+                $request->attributes->get('authUser'),
             );
         } catch (RuntimeException $e) {
             return response()->json(ApiResponse::error($e->getMessage(), null, 502), 502);
